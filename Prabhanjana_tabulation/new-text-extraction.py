@@ -86,7 +86,7 @@ def process_page_with_selective_erosion(page_image, config="--psm 6 --oem 3 -l e
     current_line = data['line_num'][0] if data['line_num'] else None
     last_y_bottom = None
     line_height_threshold = 10  # Adjust this value based on your PDF's characteristics
-    target_height = 40  # Fixed height for normalized bounding boxes (same as V2)
+    target_height = 50  # Fixed height for normalized bounding boxes (same as V2)
     
     # Process each word
     for i in range(len(data["text"])):
@@ -112,7 +112,7 @@ def process_page_with_selective_erosion(page_image, config="--psm 6 --oem 3 -l e
         
         # Apply V2 bold detection logic for Hindi text
         if is_hindi_text(text):
-            # Normalize bounding box height to 40px (same as V2)
+            # Normalize bounding box height to 50px (same as V2)
             x_norm, y_norm, w_norm, h_norm = normalize_bounding_box_height(
                 x, y, w, h, target_height, page_image.height
             )
