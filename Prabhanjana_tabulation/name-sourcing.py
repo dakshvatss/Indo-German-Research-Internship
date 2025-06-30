@@ -45,7 +45,7 @@ class Config:
     
     # Honorifics and titles - TODO: Extend with more titles as needed
     HINDI_TITLES = ['श्री', 'श्रीमती', 'डॉ', 'प्रो', 'कुमारी']
-    ENGLISH_TITLES = ['shri', 'shrimati', 'dr', 'prof', 'mr', 'mrs', 'ms', 'the minister of']
+    ENGLISH_TITLES = ['shri', 'shrimati', 'dr', 'prof', 'mr', 'mrs', 'ms']
     
     SPECIAL_ROLES = {
         'speaker': {
@@ -113,21 +113,56 @@ class NameNormalizer:
         """Extract the core name from speaker string by removing common titles and parenthetical info"""
         if not isinstance(speaker_name, str):
             return ""
-        
+    
         clean_name = speaker_name.lower().strip()
+        
+        # Check for brackets and handle special cases
+        bracket_match = re.search(r'\([^)]+\)', clean_name)
+        if bracket_match:
+            text_before_bracket = clean_name[:bracket_match.start()].strip()
+            bracketed_content = bracket_match.group(0)[1:-1].strip()  # Remove the brackets
+            
+            # Check if "nominated" appears in brackets with 85% accuracy
+            if self._contains_phrase_with_accuracy(bracketed_content, "nominated", 0.85):
+                # Return special marker for nominated members
+                return "NOMINATED_MEMBER:" + text_before_bracket
+            
+            # Check if "minister of" appears before brackets with 85% accuracy
+            target_phrase = "minister of"
+            if self._contains_phrase_with_accuracy(text_before_bracket, target_phrase, 0.85):
+                # Return only the content within brackets
+                return bracketed_content
+            else:
+                # Remove bracketed content and continue with normal processing
+                clean_name = clean_name[:bracket_match.start()].strip()
         
         # Split into words and filter out titles
         words = clean_name.split()
         filtered_words = []
-        
+    
         for word in words:
             word_clean = word.strip('.,')
-            if (word_clean not in self.config.HINDI_TITLES and 
+            if (word_clean not in self.config.HINDI_TITLES and
                 word_clean.lower() not in self.config.ENGLISH_TITLES):
                 filtered_words.append(word_clean)
-        
+    
         return ' '.join(filtered_words).strip()
 
+    def _contains_phrase_with_accuracy(self, text, target_phrase, threshold):
+        """Check if target phrase exists in text with given accuracy threshold using fuzzy matching"""
+        words = text.split()
+        target_words = target_phrase.split()
+        
+        # Check all possible n-grams of the same length as target phrase
+        for i in range(len(words) - len(target_words) + 1):
+            ngram = ' '.join(words[i:i + len(target_words)])
+            similarity = SequenceMatcher(None, ngram, target_phrase).ratio()
+            if similarity >= threshold:
+                return True
+        
+        return False
+    
+    
 class HindiTextProcessor:
     """Specialized processor for Hindi text with matra removal logic"""
     
@@ -589,23 +624,38 @@ class MPNameMatcher:
                     continue
                     
                 if speaker_name:
-                    # Check if the speaker is a special parliamentary member
-                    is_special, role_type, eng_title, hindi_title = self.role_detector.check_special_members(speaker_name)
-                    
-                    if is_special:
-                        result_df.at[idx, 'eng name(pref 1)'] = eng_title
-                        result_df.at[idx, 'hind name(pref 1)'] = hindi_title
-                        result_df.at[idx, 'eng name(pref 2)'] = eng_title
-                        result_df.at[idx, 'hind name(pref 2)'] = hindi_title
-                    else:
-                        # Use enhanced MP name matching with combined data
-                        top_matches = self.find_top_matches(speaker_name, all_names_data)
+                    # First check if it's a nominated member
+                    clean_name = self.normalizer.extract_clean_name(speaker_name)
+                    if clean_name.startswith("NOMINATED_MEMBER:"):
+                        # Extract the actual name and add (Nominated)
+                        actual_name = clean_name.replace("NOMINATED_MEMBER:", "").strip()
+                        # Capitalize properly
+                        formatted_name = ' '.join(word.capitalize() for word in actual_name.split())
+                        nominated_name = f"{formatted_name} (Nominated)"
                         
-                        # Assign matches to the result dataframe
-                        result_df.at[idx, 'eng name(pref 1)'] = top_matches[0][1]
-                        result_df.at[idx, 'hind name(pref 1)'] = top_matches[0][2]
-                        result_df.at[idx, 'eng name(pref 2)'] = top_matches[1][1]
-                        result_df.at[idx, 'hind name(pref 2)'] = top_matches[1][2]
+                        # Set both preferences to the same nominated name
+                        result_df.at[idx, 'eng name(pref 1)'] = nominated_name
+                        result_df.at[idx, 'hind name(pref 1)'] = "nan"
+                        result_df.at[idx, 'eng name(pref 2)'] = nominated_name
+                        result_df.at[idx, 'hind name(pref 2)'] = "nan"
+                    else:
+                        # Check if the speaker is a special parliamentary member
+                        is_special, role_type, eng_title, hindi_title = self.role_detector.check_special_members(speaker_name)
+                        
+                        if is_special:
+                            result_df.at[idx, 'eng name(pref 1)'] = eng_title
+                            result_df.at[idx, 'hind name(pref 1)'] = hindi_title
+                            result_df.at[idx, 'eng name(pref 2)'] = eng_title
+                            result_df.at[idx, 'hind name(pref 2)'] = hindi_title
+                        else:
+                            # Use enhanced MP name matching with combined data
+                            top_matches = self.find_top_matches(speaker_name, all_names_data)
+                            
+                            # Assign matches to the result dataframe
+                            result_df.at[idx, 'eng name(pref 1)'] = top_matches[0][1]
+                            result_df.at[idx, 'hind name(pref 1)'] = top_matches[0][2]
+                            result_df.at[idx, 'eng name(pref 2)'] = top_matches[1][1]
+                            result_df.at[idx, 'hind name(pref 2)'] = top_matches[1][2]
                 
                 # Print progress
                 if (idx + 1) % 100 == 0 or idx == total_rows - 1:
