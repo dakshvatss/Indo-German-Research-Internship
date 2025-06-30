@@ -109,12 +109,17 @@ class NameNormalizer:
         
         return norm_name, no_space_name
     
-    def extract_clean_name(self, speaker_name):
-        """Extract the core name from speaker string by removing common titles and parenthetical info"""
+    def extract_clean_name_and_constituency(self, speaker_name, is_hindi=False):
+        """Extract the core name and constituency from speaker string"""
         if not isinstance(speaker_name, str):
-            return ""
+            return "", ""
     
         clean_name = speaker_name.lower().strip()
+        constituency = ""
+        
+        # For Hindi names, return the full name without any processing
+        if is_hindi:
+            return clean_name, ""
         
         # Check for brackets and handle special cases
         bracket_match = re.search(r'\([^)]+\)', clean_name)
@@ -125,16 +130,17 @@ class NameNormalizer:
             # Check if "nominated" appears in brackets with 85% accuracy
             if self._contains_phrase_with_accuracy(bracketed_content, "nominated", 0.85):
                 # Return special marker for nominated members
-                return "NOMINATED_MEMBER:" + text_before_bracket
+                return "NOMINATED_MEMBER:" + text_before_bracket, ""
             
             # Check if "minister of" appears before brackets with 85% accuracy
             target_phrase = "minister of"
             if self._contains_phrase_with_accuracy(text_before_bracket, target_phrase, 0.85):
-                # Return only the content within brackets
-                return bracketed_content
+                # Return only the content within brackets as name, no constituency
+                return bracketed_content, ""
             else:
-                # Remove bracketed content and continue with normal processing
-                clean_name = clean_name[:bracket_match.start()].strip()
+                # Store bracketed content as constituency and continue with normal processing
+                constituency = bracketed_content
+                clean_name = text_before_bracket
         
         # Split into words and filter out titles
         words = clean_name.split()
@@ -146,7 +152,8 @@ class NameNormalizer:
                 word_clean.lower() not in self.config.ENGLISH_TITLES):
                 filtered_words.append(word_clean)
     
-        return ' '.join(filtered_words).strip()
+        final_name = ' '.join(filtered_words).strip()
+        return final_name, constituency
 
     def _contains_phrase_with_accuracy(self, text, target_phrase, threshold):
         """Check if target phrase exists in text with given accuracy threshold using fuzzy matching"""
@@ -161,8 +168,7 @@ class NameNormalizer:
                 return True
         
         return False
-    
-    
+
 class HindiTextProcessor:
     """Specialized processor for Hindi text with matra removal logic"""
     
@@ -207,14 +213,56 @@ class SimilarityScorer:
         self.normalizer = normalizer
         self.hindi_processor = hindi_processor
     
+    def calculate_constituency_similarity(self, extracted_constituency, mp_constituency):
+        """Calculate similarity between extracted constituency and MP constituency"""
+        if not extracted_constituency or not isinstance(mp_constituency, str):
+            return 0
+        
+        norm_extracted = self.normalizer.normalize_name(extracted_constituency)
+        norm_mp_const = self.normalizer.normalize_name(mp_constituency)
+        
+        if not norm_extracted or not norm_mp_const:
+            return 0
+        
+        # Check for exact match
+        if norm_extracted == norm_mp_const:
+            return 1.0
+        
+        # Check if one is contained in the other
+        if norm_extracted in norm_mp_const or norm_mp_const in norm_extracted:
+            return 0.9
+        
+        # Use sequence matcher for partial similarity
+        return SequenceMatcher(None, norm_extracted, norm_mp_const).ratio()
+    
+    def check_name_words_match_with_constituency(self, speaker_name, mp_name, mp_constituency, is_hindi=False):
+        """Enhanced matching with constituency consideration for English names"""
+        if not isinstance(speaker_name, str) or not isinstance(mp_name, str):
+            return 0, [], 0
+        
+        # Extract clean names and constituency
+        if is_hindi:
+            clean_speaker, _ = self.normalizer.extract_clean_name_and_constituency(speaker_name, is_hindi=True)
+            clean_mp = self.normalizer.extract_clean_name_and_constituency(mp_name, is_hindi=True)[0]
+            constituency_score = 0  # No constituency matching for Hindi
+        else:
+            clean_speaker, extracted_constituency = self.normalizer.extract_clean_name_and_constituency(speaker_name, is_hindi=False)
+            clean_mp = self.normalizer.extract_clean_name_and_constituency(mp_name, is_hindi=False)[0]
+            constituency_score = self.calculate_constituency_similarity(extracted_constituency, mp_constituency)
+        
+        # Calculate name similarity using existing logic
+        name_score, matched_words = self.check_name_words_match(speaker_name, mp_name, is_hindi)
+        
+        return name_score, matched_words, constituency_score
+    
     def check_name_words_match(self, speaker_name, mp_name, is_hindi=False):
         """Enhanced matching with improved Hindi full-string comparison"""
         if not isinstance(speaker_name, str) or not isinstance(mp_name, str):
             return 0, []
         
-        # Extract clean names
-        clean_speaker = self.normalizer.extract_clean_name(speaker_name)
-        clean_mp = self.normalizer.extract_clean_name(mp_name) if not is_hindi else mp_name
+        # Extract clean names - pass is_hindi parameter
+        clean_speaker = self.normalizer.extract_clean_name_and_constituency(speaker_name, is_hindi=False)[0]  # Speaker name is always processed as English for special cases
+        clean_mp = self.normalizer.extract_clean_name_and_constituency(mp_name, is_hindi=is_hindi)[0]
         
         # For Hindi names, prioritize full-string comparison
         if is_hindi:
@@ -326,13 +374,31 @@ class SimilarityScorer:
         
         return 0, []
     
+    def calculate_string_similarity_with_constituency(self, speaker_str, mp_str, mp_constituency, is_hindi=False):
+        """Enhanced similarity calculation with constituency consideration"""
+        if not isinstance(speaker_str, str) or not isinstance(mp_str, str):
+            return 0, 0
+        
+        # Calculate name similarity using existing logic
+        name_similarity = self.calculate_string_similarity(speaker_str, mp_str, is_hindi)
+        
+        # Calculate constituency similarity for English names
+        if not is_hindi:
+            _, extracted_constituency = self.normalizer.extract_clean_name_and_constituency(speaker_str, is_hindi=False)
+            constituency_similarity = self.calculate_constituency_similarity(extracted_constituency, mp_constituency)
+        else:
+            constituency_similarity = 0
+        
+        return name_similarity, constituency_similarity
+    
     def calculate_string_similarity(self, speaker_str, mp_str, is_hindi=False):
         """Enhanced similarity calculation with improved Hindi full-string comparison"""
         if not isinstance(speaker_str, str) or not isinstance(mp_str, str):
             return 0
         
-        clean_speaker = self.normalizer.extract_clean_name(speaker_str)
-        clean_mp = self.normalizer.extract_clean_name(mp_str) if not is_hindi else mp_str
+        # Extract clean names - pass is_hindi parameter
+        clean_speaker = self.normalizer.extract_clean_name_and_constituency(speaker_str, is_hindi=False)[0]  # Speaker name is always processed as English for special cases
+        clean_mp = self.normalizer.extract_clean_name_and_constituency(mp_str, is_hindi=is_hindi)[0]
         
         if is_hindi:
             norm_speaker, speaker_no_space = self.normalizer.normalize_hindi_name(clean_speaker)
@@ -371,6 +437,7 @@ class SimilarityScorer:
                 return 0.9 + (coverage * 0.1)
             
             return SequenceMatcher(None, norm_mp, norm_speaker).ratio()
+
 
 class SpecialRoleDetector:
     """Detects special parliamentary roles like Speaker, Chairperson, Secretary-General, etc."""
@@ -454,9 +521,6 @@ class SpecialRoleDetector:
     
 class DataLoader:
     """Handles loading and combining data from multiple sources"""
-    # TODO: Add support for different file formats (Excel, JSON)
-    # TODO: Add data validation and schema checking
-    # TODO: Add streaming for large files
     
     @staticmethod
     def load_all_names_data(mp_file_path, rajya_sabha_file_path, mp_eng_name_col_idx, mp_hindi_name_col_idx):
@@ -471,10 +535,12 @@ class DataLoader:
             for _, row in mp_data.iterrows():
                 eng_name = row.iloc[mp_eng_name_col_idx] if mp_eng_name_col_idx < len(row) else ""
                 hindi_name = row.iloc[mp_hindi_name_col_idx] if mp_hindi_name_col_idx < len(row) else ""
+                constituency = row.iloc[1] if len(row) > 1 else ""  # Constituency is in column 2 (index 1)
                 
                 all_names.append({
                     'eng_name': eng_name if isinstance(eng_name, str) else "",
                     'hindi_name': hindi_name if isinstance(hindi_name, str) else "",
+                    'constituency': constituency if isinstance(constituency, str) else "",
                     'source': 'lok_sabha'
                 })
             
@@ -495,6 +561,7 @@ class DataLoader:
                 all_names.append({
                     'eng_name': eng_name,
                     'hindi_name': hindi_name,
+                    'constituency': "",  # Rajya Sabha ministers don't have constituencies in the same way
                     'source': 'rajya_sabha'
                 })
             
@@ -504,7 +571,7 @@ class DataLoader:
             print(f"Warning: Could not load Rajya Sabha data from {rajya_sabha_file_path}: {str(e)}")
         
         print(f"Total names loaded: {len(all_names)}")
-        return all_names
+        return all_names    
 
 class MPNameMatcher:
     """Main class that orchestrates the MP name matching process"""
@@ -515,36 +582,44 @@ class MPNameMatcher:
         self.hindi_processor = HindiTextProcessor(self.config)
         self.scorer = SimilarityScorer(self.config, self.normalizer, self.hindi_processor)
         self.role_detector = SpecialRoleDetector(self.config, self.scorer)
-        
-        # TODO: Add caching for normalized names and similarity scores
-        # TODO: Add performance monitoring and metrics collection
     
     def find_top_matches(self, speaker_name, all_names_data):
-        """Enhanced matching with improved scoring for Hindi names"""
+        """Enhanced matching with constituency consideration for English names"""
         matches = []
         
         for name_entry in all_names_data:
             eng_name = name_entry['eng_name']
             hindi_name = name_entry['hindi_name']
+            constituency = name_entry.get('constituency', '')
             
             # Skip entries with empty names
             if not eng_name and not hindi_name:
                 continue
                 
-            # Check word matches for English name
-            eng_score, eng_matched_words = self.scorer.check_name_words_match(speaker_name, eng_name, is_hindi=False)
+            # Check word matches and constituency for English name
+            eng_score, eng_matched_words, eng_constituency_score = self.scorer.check_name_words_match_with_constituency(
+                speaker_name, eng_name, constituency, is_hindi=False)
             
-            # Check word matches for Hindi name
+            # Check word matches for Hindi name (no constituency matching)
             hindi_score, hindi_matched_words = self.scorer.check_name_words_match(
                 speaker_name, hindi_name, is_hindi=True) if isinstance(hindi_name, str) else (0, [])
+            hindi_constituency_score = 0
             
             # Add string similarity
-            eng_string_sim = self.scorer.calculate_string_similarity(speaker_name, eng_name, is_hindi=False)
+            eng_string_sim, eng_string_constituency_sim = self.scorer.calculate_string_similarity_with_constituency(
+                speaker_name, eng_name, constituency, is_hindi=False)
             hindi_string_sim = self.scorer.calculate_string_similarity(
                 speaker_name, hindi_name, is_hindi=True) if isinstance(hindi_name, str) else 0
             
-            # Combine scores with weights
-            eng_combined = eng_score * self.config.WORD_MATCH_WEIGHT + eng_string_sim * self.config.STRING_SIMILARITY_WEIGHT
+            # Combine name and constituency scores for English (70% name, 30% constituency)
+            if eng_constituency_score > 0 or eng_string_constituency_sim > 0:
+                avg_constituency_score = (eng_constituency_score + eng_string_constituency_sim) / 2
+                eng_name_combined = eng_score * self.config.WORD_MATCH_WEIGHT + eng_string_sim * self.config.STRING_SIMILARITY_WEIGHT
+                eng_combined = (eng_name_combined * 0.7) + (avg_constituency_score * 0.3)
+            else:
+                eng_combined = eng_score * self.config.WORD_MATCH_WEIGHT + eng_string_sim * self.config.STRING_SIMILARITY_WEIGHT
+            
+            # Combine scores for Hindi (no constituency)
             hindi_combined = hindi_score * self.config.WORD_MATCH_WEIGHT + hindi_string_sim * self.config.STRING_SIMILARITY_WEIGHT
             
             # Determine which match is better
@@ -594,7 +669,7 @@ class MPNameMatcher:
 
     def match_mp_names(self, mp_file_path, speech_file_path, output_path, rajya_sabha_file_path,
                       mp_eng_name_col_idx=2, mp_hindi_name_col_idx=3, speech_speaker_col_idx=2):
-        """Main matching function with enhanced Hindi comparison logic and dual data sources"""
+        """Main matching function with enhanced constituency-based matching"""
         try:
             # Load all names data from both sources
             all_names_data = DataLoader.load_all_names_data(
@@ -624,8 +699,8 @@ class MPNameMatcher:
                     continue
                     
                 if speaker_name:
-                    # First check if it's a nominated member
-                    clean_name = self.normalizer.extract_clean_name(speaker_name)
+                    # First check if it's a nominated member (always check as English for special processing)
+                    clean_name, _ = self.normalizer.extract_clean_name_and_constituency(speaker_name, is_hindi=False)
                     if clean_name.startswith("NOMINATED_MEMBER:"):
                         # Extract the actual name and add (Nominated)
                         actual_name = clean_name.replace("NOMINATED_MEMBER:", "").strip()
@@ -635,9 +710,9 @@ class MPNameMatcher:
                         
                         # Set both preferences to the same nominated name
                         result_df.at[idx, 'eng name(pref 1)'] = nominated_name
-                        result_df.at[idx, 'hind name(pref 1)'] = "nan"
+                        result_df.at[idx, 'hind name(pref 1)'] = nominated_name
                         result_df.at[idx, 'eng name(pref 2)'] = nominated_name
-                        result_df.at[idx, 'hind name(pref 2)'] = "nan"
+                        result_df.at[idx, 'hind name(pref 2)'] = nominated_name
                     else:
                         # Check if the speaker is a special parliamentary member
                         is_special, role_type, eng_title, hindi_title = self.role_detector.check_special_members(speaker_name)
@@ -648,7 +723,7 @@ class MPNameMatcher:
                             result_df.at[idx, 'eng name(pref 2)'] = eng_title
                             result_df.at[idx, 'hind name(pref 2)'] = hindi_title
                         else:
-                            # Use enhanced MP name matching with combined data
+                            # Use enhanced MP name matching with constituency consideration
                             top_matches = self.find_top_matches(speaker_name, all_names_data)
                             
                             # Assign matches to the result dataframe
