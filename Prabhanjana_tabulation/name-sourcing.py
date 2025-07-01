@@ -5,7 +5,6 @@ from difflib import SequenceMatcher
 import sys
 import logging
 
-# Configuration - TODO: Move to external config file (JSON/YAML) for better maintainability
 class Config:
     # Similarity thresholds
     SPECIAL_ROLE_DETECTION_THRESHOLD = 0.6
@@ -45,12 +44,16 @@ class Config:
     
     # Honorifics and titles - TODO: Extend with more titles as needed
     HINDI_TITLES = ['श्री', 'श्रीमती', 'डॉ', 'प्रो', 'कुमारी']
-    ENGLISH_TITLES = ['shri', 'shrimati', 'dr', 'prof', 'mr', 'mrs', 'ms']
+    ENGLISH_TITLES = ['shri', 'shrimati', 'dr.', 'prof', 'mr', 'mrs', 'ms']
     
     SPECIAL_ROLES = {
         'speaker': {
             'english': ['hon. speaker', 'madam speaker', 'speaker'],
             'hindi': ['माननीय अध्यक्ष', 'अध्यक्ष']
+        },
+        'deputy_speaker': {
+            'english': ['deputy speaker'],
+            'hindi': ['उपाध्यक्ष', 'माननीय उपाध्यक्ष']
         },
         'chairperson': {
             'english': ['hon. chairperson', 'chairperson', 'chair'],
@@ -251,7 +254,7 @@ class SimilarityScorer:
             constituency_score = self.calculate_constituency_similarity(extracted_constituency, mp_constituency)
         
         # Calculate name similarity using existing logic
-        name_score, matched_words = self.check_name_words_match(speaker_name, mp_name, is_hindi)
+        name_score, matched_words = self.check_name_words_match(clean_speaker, clean_mp, is_hindi)
         
         return name_score, matched_words, constituency_score
     
@@ -379,15 +382,18 @@ class SimilarityScorer:
         if not isinstance(speaker_str, str) or not isinstance(mp_str, str):
             return 0, 0
         
-        # Calculate name similarity using existing logic
-        name_similarity = self.calculate_string_similarity(speaker_str, mp_str, is_hindi)
-        
-        # Calculate constituency similarity for English names
-        if not is_hindi:
-            _, extracted_constituency = self.normalizer.extract_clean_name_and_constituency(speaker_str, is_hindi=False)
-            constituency_similarity = self.calculate_constituency_similarity(extracted_constituency, mp_constituency)
+        # Extract clean names and constituency
+        if is_hindi:
+            clean_speaker, _ = self.normalizer.extract_clean_name_and_constituency(speaker_str, is_hindi=True)
+            clean_mp = self.normalizer.extract_clean_name_and_constituency(mp_str, is_hindi=True)[0]
+            constituency_similarity = 0  # No constituency matching for Hindi
         else:
-            constituency_similarity = 0
+            clean_speaker, extracted_constituency = self.normalizer.extract_clean_name_and_constituency(speaker_str, is_hindi=False)
+            clean_mp = self.normalizer.extract_clean_name_and_constituency(mp_str, is_hindi=False)[0]
+            constituency_similarity = self.calculate_constituency_similarity(extracted_constituency, mp_constituency)
+        
+        # Calculate name similarity using cleaned names
+        name_similarity = self.calculate_string_similarity(clean_speaker, clean_mp, is_hindi)
         
         return name_similarity, constituency_similarity
     
@@ -483,6 +489,10 @@ class SpecialRoleDetector:
                 'english': 'HON. SPEAKER',
                 'hindi': 'माननीय अध्यक्ष'
             },
+            'deputy_speaker': {
+                'english': 'DEPUTY SPEAKER',
+                'hindi': 'माननीय उपाध्यक्ष'
+            },
             'chairperson': {
                 'english': 'HON. CHAIRPERSON',
                 'hindi': 'माननीय सभापति'
@@ -506,17 +516,6 @@ class SpecialRoleDetector:
         }
         
         return title_mapping.get(role_type, {}).get(language, "")
-    
-    # Keep these methods for backward compatibility (they now use check_special_members internally)
-    def is_speaker_chair(self, speaker_name):
-        """Check if a speaker name is the Speaker of the House"""
-        is_special, role_type, _, _ = self.check_special_members(speaker_name)
-        return is_special and role_type == 'speaker'
-    
-    def is_chair_chair(self, speaker_name):
-        """Check if a speaker name is the Chairperson"""
-        is_special, role_type, _, _ = self.check_special_members(speaker_name)
-        return is_special and role_type == 'chairperson'
     
     
 class DataLoader:
@@ -709,10 +708,10 @@ class MPNameMatcher:
                         nominated_name = f"{formatted_name} (Nominated)"
                         
                         # Set both preferences to the same nominated name
-                        result_df.at[idx, 'eng name(pref 1)'] = nominated_name
-                        result_df.at[idx, 'hind name(pref 1)'] = nominated_name
-                        result_df.at[idx, 'eng name(pref 2)'] = nominated_name
-                        result_df.at[idx, 'hind name(pref 2)'] = nominated_name
+                        result_df.at[idx, 'eng name(pref 1)'] = re.sub(r'\s*\(.*?\)', '', nominated_name).strip() + ' (Nominated)'
+                        result_df.at[idx, 'hind name(pref 1)'] = "nan"
+                        result_df.at[idx, 'eng name(pref 2)'] = re.sub(r'\s*\(.*?\)', '', nominated_name).strip() + ' (Nominated)'
+                        result_df.at[idx, 'hind name(pref 2)'] = "nan"
                     else:
                         # Check if the speaker is a special parliamentary member
                         is_special, role_type, eng_title, hindi_title = self.role_detector.check_special_members(speaker_name)
