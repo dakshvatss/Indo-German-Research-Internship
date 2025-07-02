@@ -1,10 +1,12 @@
 import pandas as pd
 import re
 import string
+from fuzzywuzzy import fuzz, process
 from difflib import SequenceMatcher
 import sys
-import logging
 
+
+# Configuration - TODO: Move to external config file (JSON/YAML) for better maintainability
 class Config:
     # Similarity thresholds
     SPECIAL_ROLE_DETECTION_THRESHOLD = 0.6
@@ -44,7 +46,7 @@ class Config:
     
     # Honorifics and titles - TODO: Extend with more titles as needed
     HINDI_TITLES = ['श्री', 'श्रीमती', 'डॉ', 'प्रो', 'कुमारी']
-    ENGLISH_TITLES = ['shri', 'shrimati', 'dr.', 'prof', 'mr', 'mrs', 'ms']
+    ENGLISH_TITLES = ['shri', 'shrimati', 'dr', 'prof', 'mr', 'mrs', 'ms']
     
     SPECIAL_ROLES = {
         'speaker': {
@@ -208,170 +210,20 @@ class HindiTextProcessor:
         # Use sequence matcher for partial consonant similarity
         return SequenceMatcher(None, base1, base2).ratio() * 0.5
 
+from fuzzywuzzy import fuzz, process
+import re
+import string
+
 class SimilarityScorer:
-    """Enhanced scorer with better initial handling"""
+    """Handles similarity calculations between names using FuzzyWuzzy for enhanced matching"""
     
-    def __init__(self, config, normalizer, hindi_processor):
+    def __init__(self, config: Config, normalizer: NameNormalizer, hindi_processor: HindiTextProcessor):
         self.config = config
         self.normalizer = normalizer
         self.hindi_processor = hindi_processor
     
-    def extract_initials_and_words(self, name_str):
-        """Extract initials and full words separately from a name string"""
-        if not isinstance(name_str, str):
-            return [], []
-        
-        words = name_str.split()
-        initials = []
-        full_words = []
-        
-        for word in words:
-            # Remove punctuation and check if it's a single letter
-            clean_word = ''.join(char for char in word if char.isalnum())
-            if len(clean_word) == 1 and clean_word.isalpha():
-                initials.append(clean_word.upper())
-            elif clean_word:  # Non-empty word that's not a single letter
-                full_words.append(clean_word.lower())
-        
-        return initials, full_words
-    
-    def match_initials_flexible(self, speaker_initials, mp_initials):
-        """Match initials flexibly - they can be in any order"""
-        if not speaker_initials or not mp_initials:
-            return 0
-        
-        # Convert to sets for order-independent matching
-        speaker_set = set(speaker_initials)
-        mp_set = set(mp_initials)
-        
-        # Calculate how many initials match
-        common_initials = speaker_set.intersection(mp_set)
-        
-        if not common_initials:
-            return 0
-        
-        # Score based on proportion of MP initials that are matched
-        match_ratio = len(common_initials) / len(mp_set)
-        return match_ratio * 0.9  # High score for initial matches
-    
-    def check_name_initial_correspondence(self, speaker_words, mp_words):
-        """Check if full names correspond to initials and give boost"""
-        boost = 0
-        
-        # Extract initials and full words from both
-        speaker_initials, speaker_full_words = self.extract_initials_and_words(' '.join(speaker_words))
-        mp_initials, mp_full_words = self.extract_initials_and_words(' '.join(mp_words))
-        
-        # Case 1: Speaker has initials, MP has full words
-        # Check if initials correspond to first letters of full words
-        for initial in speaker_initials:
-            for full_word in mp_full_words:
-                if full_word and full_word[0].upper() == initial:
-                    boost += 0.05  # Small boost for each correspondence
-        
-        # Case 2: Speaker has full words, MP has initials
-        # Check if first letters of full words correspond to initials
-        for full_word in speaker_full_words:
-            if full_word:
-                first_letter = full_word[0].upper()
-                if first_letter in mp_initials:
-                    boost += 0.05  # Small boost for each correspondence
-        
-        return min(boost, 0.2)  # Cap the boost at 0.2
-    
-    def _word_by_word_matching(self, norm_speaker, norm_mp, is_hindi):
-        """Enhanced word-by-word matching with flexible initial handling"""
-        if not norm_speaker or not norm_mp:
-            return 0, []
-        
-        speaker_words = norm_speaker.split()
-        mp_words = norm_mp.split()
-        
-        # Extract initials and full words separately
-        speaker_initials, speaker_full_words = self.extract_initials_and_words(norm_speaker)
-        mp_initials, mp_full_words = self.extract_initials_and_words(norm_mp)
-        
-        matched_words = []
-        word_scores = []
-        
-        # First, match full words using regular similarity
-        for mp_word in mp_words:
-            clean_mp_word = ''.join(char for char in mp_word if char.isalnum())
-            
-            # Skip if this is an initial - handle separately
-            if len(clean_mp_word) == 1 and clean_mp_word.isalpha():
-                continue
-                
-            best_match_score = 0
-            best_match_word = None
-            
-            for speaker_word in speaker_words:
-                clean_speaker_word = ''.join(char for char in speaker_word if char.isalnum())
-                
-                # Skip if this is an initial
-                if len(clean_speaker_word) == 1 and clean_speaker_word.isalpha():
-                    continue
-                
-                if is_hindi:
-                    if clean_mp_word == clean_speaker_word:
-                        best_match_score = 1.0
-                        best_match_word = mp_word
-                        break
-                    else:
-                        consonant_sim = self.hindi_processor.calculate_consonant_similarity(clean_mp_word, clean_speaker_word)
-                        if consonant_sim > best_match_score:
-                            best_match_score = consonant_sim
-                            best_match_word = mp_word
-                else:
-                    if clean_mp_word == clean_speaker_word:
-                        best_match_score = 1.0
-                        best_match_word = mp_word
-                        break
-                    else:
-                        similarity = SequenceMatcher(None, clean_mp_word, clean_speaker_word).ratio()
-                        if similarity > best_match_score:
-                            best_match_score = similarity
-                            best_match_word = mp_word
-            
-            if best_match_score >= self.config.FALLBACK_THRESHOLD:
-                matched_words.append(best_match_word)
-                word_scores.append(best_match_score)
-        
-        # Handle initial matching separately - flexible order matching
-        initial_match_score = self.match_initials_flexible(speaker_initials, mp_initials)
-        if initial_match_score > 0:
-            # Add initials to matched words for coverage calculation
-            for initial in mp_initials:
-                if any(initial == sp_init for sp_init in speaker_initials):
-                    matched_words.append(initial)
-                    word_scores.append(initial_match_score)
-        
-        if matched_words:
-            avg_word_score = sum(word_scores) / len(word_scores)
-            coverage_score = len(matched_words) / len(mp_words)
-            
-            # Base match score
-            match_score = avg_word_score * coverage_score * self.config.WORD_BASED_MATCH_SCALE
-            
-            # Add boost for name-initial correspondence
-            correspondence_boost = self.check_name_initial_correspondence(speaker_words, mp_words)
-            match_score += correspondence_boost
-            
-            # Sequential match bonus (only for non-initials)
-            non_initial_matches = [word for word in matched_words 
-                                 if not (len(''.join(char for char in word if char.isalnum())) == 1)]
-            mp_name_str = ' '.join(mp_words)
-            for i in range(len(non_initial_matches) - 1):
-                if mp_name_str.find(f"{non_initial_matches[i]} {non_initial_matches[i+1]}") >= 0:
-                    match_score += self.config.SEQUENTIAL_MATCH_BONUS
-            
-            return min(match_score, 1.0), matched_words
-        
-        return 0, []
-    
-    # Keep all other existing methods from SimilarityScorer unchanged
     def calculate_constituency_similarity(self, extracted_constituency, mp_constituency):
-        """Calculate similarity between extracted constituency and MP constituency"""
+        """Calculate similarity between extracted constituency and MP constituency using FuzzyWuzzy"""
         if not extracted_constituency or not isinstance(mp_constituency, str):
             return 0
         
@@ -381,16 +233,16 @@ class SimilarityScorer:
         if not norm_extracted or not norm_mp_const:
             return 0
         
-        # Check for exact match
-        if norm_extracted == norm_mp_const:
-            return 1.0
+        # Use FuzzyWuzzy for constituency matching
+        # token_set_ratio is best for constituency names as it handles word order and extra words
+        token_set_score = fuzz.token_set_ratio(norm_extracted, norm_mp_const) / 100.0
+        partial_score = fuzz.partial_ratio(norm_extracted, norm_mp_const) / 100.0
+        basic_score = fuzz.ratio(norm_extracted, norm_mp_const) / 100.0
         
-        # Check if one is contained in the other
-        if norm_extracted in norm_mp_const or norm_mp_const in norm_extracted:
-            return 0.9
+        # Weight the scores - token_set is most important for constituencies
+        combined_score = (token_set_score * 0.5) + (partial_score * 0.3) + (basic_score * 0.2)
         
-        # Use sequence matcher for partial similarity
-        return SequenceMatcher(None, norm_extracted, norm_mp_const).ratio()
+        return combined_score
     
     def check_name_words_match_with_constituency(self, speaker_name, mp_name, mp_constituency, is_hindi=False):
         """Enhanced matching with constituency consideration for English names"""
@@ -407,13 +259,13 @@ class SimilarityScorer:
             clean_mp = self.normalizer.extract_clean_name_and_constituency(mp_name, is_hindi=False)[0]
             constituency_score = self.calculate_constituency_similarity(extracted_constituency, mp_constituency)
         
-        # Calculate name similarity using enhanced logic
-        name_score, matched_words = self.check_name_words_match(clean_speaker, clean_mp, is_hindi)
+        # Calculate name similarity using existing logic
+        name_score, matched_words = self.check_name_words_match(speaker_name, mp_name, is_hindi)
         
         return name_score, matched_words, constituency_score
     
     def check_name_words_match(self, speaker_name, mp_name, is_hindi=False):
-        """Enhanced matching with improved Hindi full-string comparison and initial handling"""
+        """Enhanced matching with FuzzyWuzzy for English and improved Hindi full-string comparison"""
         if not isinstance(speaker_name, str) or not isinstance(mp_name, str):
             return 0, []
         
@@ -421,7 +273,7 @@ class SimilarityScorer:
         clean_speaker = self.normalizer.extract_clean_name_and_constituency(speaker_name, is_hindi=False)[0]  # Speaker name is always processed as English for special cases
         clean_mp = self.normalizer.extract_clean_name_and_constituency(mp_name, is_hindi=is_hindi)[0]
         
-        # For Hindi names, prioritize full-string comparison
+        # For Hindi names, use existing logic (keep unchanged for backward compatibility)
         if is_hindi:
             norm_speaker, speaker_no_space = self.normalizer.normalize_hindi_name(clean_speaker)
             norm_mp, mp_no_space = self.normalizer.normalize_hindi_name(clean_mp)
@@ -439,8 +291,8 @@ class SimilarityScorer:
                 if speaker_no_space == mp_no_space:
                     return self.config.EXACT_MATCH_SCORE, norm_mp.split()
                 
-                # Check string similarity for no-space versions
-                no_space_similarity = SequenceMatcher(None, mp_no_space, speaker_no_space).ratio()
+                # Check string similarity for no-space versions using FuzzyWuzzy
+                no_space_similarity = fuzz.ratio(mp_no_space, speaker_no_space) / 100.0
                 if no_space_similarity >= self.config.NO_SPACE_SIMILARITY_THRESHOLD:
                     return no_space_similarity * self.config.NO_SPACE_SIMILARITY_SCALE, norm_mp.split()
             
@@ -462,23 +314,195 @@ class SimilarityScorer:
                     return consonant_similarity * self.config.CONSONANT_SIMILARITY_SCALE, norm_mp.split()
         
         else:
-            # Regular English name processing
+            # Enhanced English name processing with FuzzyWuzzy
             norm_speaker = self.normalizer.normalize_name(clean_speaker)
             norm_mp = self.normalizer.normalize_name(clean_mp)
             
-            # Check for full name match
+            if not norm_speaker or not norm_mp:
+                return 0, []
+            
+            # Use FuzzyWuzzy for English name matching
+            # Multiple ratio types for comprehensive matching
+            basic_ratio = fuzz.ratio(norm_mp, norm_speaker) / 100.0
+            partial_ratio = fuzz.partial_ratio(norm_mp, norm_speaker) / 100.0
+            token_sort_ratio = fuzz.token_sort_ratio(norm_mp, norm_speaker) / 100.0
+            token_set_ratio = fuzz.token_set_ratio(norm_mp, norm_speaker) / 100.0
+            
+            # Check for exact match first
             if norm_speaker == norm_mp:
                 return self.config.EXACT_MATCH_SCORE, norm_mp.split()
             
-            # Check if MP name is contained in speaker name
+            # Check if MP name is contained in speaker name (for backward compatibility)
             if norm_mp in norm_speaker:
                 coverage = len(norm_mp) / len(norm_speaker) if len(norm_speaker) > 0 else 0
                 base_score = self.config.CONTAINMENT_BASE_SCORE
                 coverage_bonus = coverage * self.config.COVERAGE_BONUS_MULTIPLIER
-                return min(base_score + coverage_bonus, 1.0), norm_mp.split()
+                containment_score = min(base_score + coverage_bonus, 1.0)
+                
+                # Use the higher of containment score or FuzzyWuzzy scores
+                fuzzy_score = max(basic_ratio, partial_ratio, token_sort_ratio, token_set_ratio)
+                final_score = max(containment_score, fuzzy_score)
+                return final_score, norm_mp.split()
+            
+            # Use weighted combination of FuzzyWuzzy scores
+            # token_set_ratio is most important for names with titles/extra words
+            # token_sort_ratio handles word order differences
+            # partial_ratio handles partial matches
+            # basic_ratio for overall similarity
+            weighted_score = (
+                token_set_ratio * 0.35 +      # Handles extra words, titles
+                token_sort_ratio * 0.25 +     # Handles word order
+                partial_ratio * 0.25 +        # Handles partial matches
+                basic_ratio * 0.15            # Overall similarity
+            )
+            
+            # Apply minimum threshold
+            if weighted_score >= self.config.FALLBACK_THRESHOLD:
+                return weighted_score, norm_mp.split()
         
-        # Fallback to enhanced word-by-word matching with initial handling
+        # Fallback to word-by-word matching for very low scores
         return self._word_by_word_matching(norm_speaker, norm_mp, is_hindi)
+    
+    def _word_by_word_matching(self, norm_speaker, norm_mp, is_hindi):
+        """Enhanced word-by-word matching with FuzzyWuzzy for English"""
+        if not norm_speaker or not norm_mp:
+            return 0, []
+        
+        speaker_words = norm_speaker.split()
+        mp_words = norm_mp.split()
+        
+        matched_words = []
+        word_scores = []
+        
+        for mp_word in mp_words:
+            best_match_score = 0
+            best_match_word = None
+            
+            for speaker_word in speaker_words:
+                if is_hindi:
+                    # Keep existing Hindi logic
+                    if mp_word == speaker_word:
+                        best_match_score = 1.0
+                        best_match_word = mp_word
+                        break
+                    else:
+                        consonant_sim = self.hindi_processor.calculate_consonant_similarity(mp_word, speaker_word)
+                        if consonant_sim > best_match_score:
+                            best_match_score = consonant_sim
+                            best_match_word = mp_word
+                else:
+                    # Enhanced English word matching with FuzzyWuzzy
+                    if mp_word == speaker_word:
+                        best_match_score = 1.0
+                        best_match_word = mp_word
+                        break
+                    else:
+                        # Use FuzzyWuzzy for individual word matching
+                        word_ratio = fuzz.ratio(mp_word, speaker_word) / 100.0
+                        if word_ratio > best_match_score:
+                            best_match_score = word_ratio
+                            best_match_word = mp_word
+            
+            if best_match_score >= self.config.FALLBACK_THRESHOLD:
+                matched_words.append(best_match_word)
+                word_scores.append(best_match_score)
+        
+        if matched_words:
+            avg_word_score = sum(word_scores) / len(word_scores)
+            coverage_score = len(matched_words) / len(mp_words)
+            match_score = avg_word_score * coverage_score * self.config.WORD_BASED_MATCH_SCALE
+            
+            # Add boost for sequential matches
+            mp_name_str = ' '.join(mp_words)
+            for i in range(len(matched_words) - 1):
+                if mp_name_str.find(f"{matched_words[i]} {matched_words[i+1]}") >= 0:
+                    match_score += self.config.SEQUENTIAL_MATCH_BONUS
+            
+            return min(match_score, 1.0), matched_words
+        
+        return 0, []
+    
+    def calculate_string_similarity_with_constituency(self, speaker_str, mp_str, mp_constituency, is_hindi=False):
+        """Enhanced similarity calculation with constituency consideration using FuzzyWuzzy"""
+        if not isinstance(speaker_str, str) or not isinstance(mp_str, str):
+            return 0, 0
+        
+        # Calculate name similarity using existing logic
+        name_similarity = self.calculate_string_similarity(speaker_str, mp_str, is_hindi)
+        
+        # Calculate constituency similarity for English names
+        if not is_hindi:
+            _, extracted_constituency = self.normalizer.extract_clean_name_and_constituency(speaker_str, is_hindi=False)
+            constituency_similarity = self.calculate_constituency_similarity(extracted_constituency, mp_constituency)
+        else:
+            constituency_similarity = 0
+        
+        return name_similarity, constituency_similarity
+    
+    def calculate_string_similarity(self, speaker_str, mp_str, is_hindi=False):
+        """Enhanced similarity calculation with FuzzyWuzzy for English names"""
+        if not isinstance(speaker_str, str) or not isinstance(mp_str, str):
+            return 0
+        
+        # Extract clean names - pass is_hindi parameter
+        clean_speaker = self.normalizer.extract_clean_name_and_constituency(speaker_str, is_hindi=False)[0]  # Speaker name is always processed as English for special cases
+        clean_mp = self.normalizer.extract_clean_name_and_constituency(mp_str, is_hindi=is_hindi)[0]
+        
+        if is_hindi:
+            # Keep existing Hindi logic unchanged
+            norm_speaker, speaker_no_space = self.normalizer.normalize_hindi_name(clean_speaker)
+            norm_mp, mp_no_space = self.normalizer.normalize_hindi_name(clean_mp)
+            
+            # Prioritize full-string comparison
+            if mp_no_space and speaker_no_space:
+                if mp_no_space in speaker_no_space:
+                    coverage = len(mp_no_space) / len(speaker_no_space) if len(speaker_no_space) > 0 else 0
+                    return 0.9 + (coverage * 0.1)
+                
+                # Use FuzzyWuzzy for Hindi no-space similarity
+                no_space_sim = fuzz.ratio(mp_no_space, speaker_no_space) / 100.0
+                if no_space_sim >= self.config.NO_SPACE_SIMILARITY_THRESHOLD:
+                    return no_space_sim * self.config.NO_SPACE_SIMILARITY_SCALE
+            
+            # Regular similarity as fallback
+            if norm_mp and norm_speaker:
+                if norm_mp in norm_speaker:
+                    coverage = len(norm_mp) / len(norm_speaker) if len(norm_speaker) > 0 else 0
+                    return 0.8 + (coverage * 0.1)
+                
+                # Use FuzzyWuzzy for Hindi regular similarity
+                regular_sim = fuzz.ratio(norm_mp, norm_speaker) / 100.0
+                return regular_sim * self.config.REGULAR_SIMILARITY_SCALE
+            
+            return 0
+        else:
+            # Enhanced English processing with FuzzyWuzzy
+            norm_speaker = self.normalizer.normalize_name(clean_speaker)
+            norm_mp = self.normalizer.normalize_name(clean_mp)
+            
+            if not norm_speaker or not norm_mp:
+                return 0
+            
+            # Check for containment first (backward compatibility)
+            if norm_mp in norm_speaker:
+                coverage = len(norm_mp) / len(norm_speaker) if len(norm_speaker) > 0 else 0
+                return 0.9 + (coverage * 0.1)
+            
+            # Use FuzzyWuzzy for comprehensive English name similarity
+            basic_ratio = fuzz.ratio(norm_mp, norm_speaker) / 100.0
+            partial_ratio = fuzz.partial_ratio(norm_mp, norm_speaker) / 100.0
+            token_sort_ratio = fuzz.token_sort_ratio(norm_mp, norm_speaker) / 100.0
+            token_set_ratio = fuzz.token_set_ratio(norm_mp, norm_speaker) / 100.0
+            
+            # Weighted combination optimized for name similarity
+            weighted_similarity = (
+                token_set_ratio * 0.3 +      # Handles extra words, titles
+                token_sort_ratio * 0.3 +     # Handles word order
+                partial_ratio * 0.25 +       # Handles partial matches
+                basic_ratio * 0.15           # Overall similarity
+            )
+            
+            return weighted_similarity
 
 class SpecialRoleDetector:
     """Detects special parliamentary roles like Speaker, Chairperson, Secretary-General, etc."""
@@ -524,9 +548,9 @@ class SpecialRoleDetector:
                 'english': 'HON. SPEAKER',
                 'hindi': 'माननीय अध्यक्ष'
             },
-            'deputy_speaker': {
+            'speaker': {
                 'english': 'DEPUTY SPEAKER',
-                'hindi': 'माननीय उपाध्यक्ष'
+                'hindi': 'माननीय अध्यक्ष'
             },
             'chairperson': {
                 'english': 'HON. CHAIRPERSON',
@@ -551,6 +575,17 @@ class SpecialRoleDetector:
         }
         
         return title_mapping.get(role_type, {}).get(language, "")
+    
+    # Keep these methods for backward compatibility (they now use check_special_members internally)
+    def is_speaker_chair(self, speaker_name):
+        """Check if a speaker name is the Speaker of the House"""
+        is_special, role_type, _, _ = self.check_special_members(speaker_name)
+        return is_special and role_type == 'speaker'
+    
+    def is_chair_chair(self, speaker_name):
+        """Check if a speaker name is the Chairperson"""
+        is_special, role_type, _, _ = self.check_special_members(speaker_name)
+        return is_special and role_type == 'chairperson'
     
     
 class DataLoader:
