@@ -548,7 +548,7 @@ class SpecialRoleDetector:
                 'english': 'HON. SPEAKER',
                 'hindi': 'माननीय अध्यक्ष'
             },
-            'speaker': {
+            'deputy speaker': {
                 'english': 'DEPUTY SPEAKER',
                 'hindi': 'माननीय अध्यक्ष'
             },
