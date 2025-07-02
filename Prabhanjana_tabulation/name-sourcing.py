@@ -643,6 +643,35 @@ class CachedMPData:
         self.normalizer = normalizer
         self.hindi_processor = hindi_processor
         self.cached_mp_data = []
+        
+    def add_nominated_member(self, name):
+        """Add a nominated member to the cached data"""
+        if not isinstance(name, str) or not name:
+            return
+        
+        # Check if this nominated member already exists in cache
+        clean_name = name.replace(' (Nominated)', '').strip()
+        for entry in self.cached_mp_data:
+            if (entry['original_eng_name'].lower() == clean_name.lower() or 
+                entry['original_eng_name'].lower() == name.lower()):
+                return  # Already exists
+        
+        print(f"Adding nominated member to cache: {clean_name}")
+        
+        # Preprocess the nominated member name
+        eng_processed = self._preprocess_english_name(clean_name, "")
+        hindi_processed = self._preprocess_hindi_name("")  # No Hindi name for nominated members
+        
+        cached_entry = {
+            'original_eng_name': clean_name,
+            'original_hindi_name': "",
+            'constituency': "",
+            'source': 'nominated',
+            'eng_processed': eng_processed,
+            'hindi_processed': hindi_processed
+        }
+        
+        self.cached_mp_data.append(cached_entry)
     
     def preprocess_mp_data(self, all_names_data):
         """Preprocess all MP names once and cache the results"""
@@ -961,11 +990,9 @@ class MPNameMatcher:
         return 0
 
 
-# Replace the match_mp_names method in MPNameMatcher class:
 
-    def match_mp_names(self, mp_file_path, speech_file_path, output_path, rajya_sabha_file_path,
-                      mp_eng_name_col_idx=2, mp_hindi_name_col_idx=3, speech_speaker_col_idx=2):
-        """Main matching function with caching for improved performance"""
+    def match_mp_names(self, mp_file_path, speech_file_path, output_path, rajya_sabha_file_path, mp_eng_name_col_idx=2, mp_hindi_name_col_idx=3, speech_speaker_col_idx=2):
+        """Main matching function with caching for improved performance and nominated member handling"""
         try:
             # Load all names data from both sources
             all_names_data = DataLoader.load_all_names_data(
@@ -973,12 +1000,11 @@ class MPNameMatcher:
             
             # Preprocess and cache MP data once
             self.cached_mp_data.preprocess_mp_data(all_names_data)
-            cached_data = self.cached_mp_data.get_cached_data()
             
             print(f"Reading speech data from {speech_file_path}...")
             speech_data = pd.read_csv(speech_file_path)
             
-            print(f"Found {len(cached_data)} cached MP names and {len(speech_data)} speech entries")
+            print(f"Found {len(self.cached_mp_data.get_cached_data())} cached MP names and {len(speech_data)} speech entries")
             
             # Create a new dataframe for output
             result_df = speech_data.copy()
@@ -1007,6 +1033,9 @@ class MPNameMatcher:
                         formatted_name = ' '.join(word.capitalize() for word in actual_name.split())
                         nominated_name = f"{formatted_name} (Nominated)"
                         
+                        # Add this nominated member to the cache for future matching
+                        self.cached_mp_data.add_nominated_member(formatted_name)
+                        
                         result_df.at[idx, 'eng name(pref 1)'] = re.sub(r'\s*\(.*?\)', '', nominated_name).strip() + ' (Nominated)'
                         result_df.at[idx, 'hind name(pref 1)'] = "nan"
                         result_df.at[idx, 'eng name(pref 2)'] = re.sub(r'\s*\(.*?\)', '', nominated_name).strip() + ' (Nominated)'
@@ -1021,14 +1050,30 @@ class MPNameMatcher:
                             result_df.at[idx, 'eng name(pref 2)'] = eng_title
                             result_df.at[idx, 'hind name(pref 2)'] = hindi_title
                         else:
-                            # Use cached MP name matching
+                            # Use cached MP name matching (including any nominated members added earlier)
+                            cached_data = self.cached_mp_data.get_cached_data()
                             top_matches = self.find_top_matches_cached(speaker_name, cached_data)
                             
+                            # Check if the match is a nominated member and format appropriately
+                            match1_eng = top_matches[0][1]
+                            match1_hindi = top_matches[0][2]
+                            match2_eng = top_matches[1][1]
+                            match2_hindi = top_matches[1][2]
+                            
+                            # Check if matches are from nominated source and add (Nominated) tag
+                            cached_data = self.cached_mp_data.get_cached_data()
+                            for entry in cached_data:
+                                if entry['source'] == 'nominated':
+                                    if entry['original_eng_name'] == match1_eng:
+                                        match1_eng = f"{match1_eng} (Nominated)"
+                                    if entry['original_eng_name'] == match2_eng:
+                                        match2_eng = f"{match2_eng} (Nominated)"
+                            
                             # Assign matches to the result dataframe
-                            result_df.at[idx, 'eng name(pref 1)'] = top_matches[0][1]
-                            result_df.at[idx, 'hind name(pref 1)'] = top_matches[0][2]
-                            result_df.at[idx, 'eng name(pref 2)'] = top_matches[1][1]
-                            result_df.at[idx, 'hind name(pref 2)'] = top_matches[1][2]
+                            result_df.at[idx, 'eng name(pref 1)'] = match1_eng
+                            result_df.at[idx, 'hind name(pref 1)'] = match1_hindi
+                            result_df.at[idx, 'eng name(pref 2)'] = match2_eng
+                            result_df.at[idx, 'hind name(pref 2)'] = match2_hindi
                 
                 # Print progress
                 if (idx + 1) % 100 == 0 or idx == total_rows - 1:
