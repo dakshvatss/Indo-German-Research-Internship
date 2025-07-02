@@ -6,7 +6,6 @@ from difflib import SequenceMatcher
 import sys
 
 
-# Configuration - TODO: Move to external config file (JSON/YAML) for better maintainability
 class Config:
     # Similarity thresholds
     SPECIAL_ROLE_DETECTION_THRESHOLD = 0.6
@@ -209,10 +208,6 @@ class HindiTextProcessor:
         
         # Use sequence matcher for partial consonant similarity
         return SequenceMatcher(None, base1, base2).ratio() * 0.5
-
-from fuzzywuzzy import fuzz, process
-import re
-import string
 
 class SimilarityScorer:
     """Handles similarity calculations between names using FuzzyWuzzy for enhanced matching"""
@@ -587,7 +582,6 @@ class SpecialRoleDetector:
         is_special, role_type, _, _ = self.check_special_members(speaker_name)
         return is_special and role_type == 'chairperson'
     
-    
 class DataLoader:
     """Handles loading and combining data from multiple sources"""
     
@@ -642,19 +636,19 @@ class DataLoader:
         print(f"Total names loaded: {len(all_names)}")
         return all_names    
 
-class MPNameMatcher:
-    """Main class that orchestrates the MP name matching process"""
+class CachedMPData:
+    """Handles preprocessing and caching of MP data to avoid redundant operations"""
     
-    def __init__(self):
-        self.config = Config()
-        self.normalizer = NameNormalizer(self.config)
-        self.hindi_processor = HindiTextProcessor(self.config)
-        self.scorer = SimilarityScorer(self.config, self.normalizer, self.hindi_processor)
-        self.role_detector = SpecialRoleDetector(self.config, self.scorer)
+    def __init__(self, normalizer: NameNormalizer, hindi_processor: HindiTextProcessor):
+        self.normalizer = normalizer
+        self.hindi_processor = hindi_processor
+        self.cached_mp_data = []
     
-    def find_top_matches(self, speaker_name, all_names_data):
-        """Enhanced matching with constituency consideration for English names"""
-        matches = []
+    def preprocess_mp_data(self, all_names_data):
+        """Preprocess all MP names once and cache the results"""
+        print("Preprocessing and caching MP data...")
+        
+        self.cached_mp_data = []
         
         for name_entry in all_names_data:
             eng_name = name_entry['eng_name']
@@ -664,34 +658,135 @@ class MPNameMatcher:
             # Skip entries with empty names
             if not eng_name and not hindi_name:
                 continue
-                
-            # Check word matches and constituency for English name
-            eng_score, eng_matched_words, eng_constituency_score = self.scorer.check_name_words_match_with_constituency(
-                speaker_name, eng_name, constituency, is_hindi=False)
             
-            # Check word matches for Hindi name (no constituency matching)
-            hindi_score, hindi_matched_words = self.scorer.check_name_words_match(
-                speaker_name, hindi_name, is_hindi=True) if isinstance(hindi_name, str) else (0, [])
-            hindi_constituency_score = 0
+            # Preprocess English name
+            eng_processed = self._preprocess_english_name(eng_name, constituency)
             
-            # Add string similarity
-            eng_string_sim, eng_string_constituency_sim = self.scorer.calculate_string_similarity_with_constituency(
-                speaker_name, eng_name, constituency, is_hindi=False)
-            hindi_string_sim = self.scorer.calculate_string_similarity(
-                speaker_name, hindi_name, is_hindi=True) if isinstance(hindi_name, str) else 0
+            # Preprocess Hindi name
+            hindi_processed = self._preprocess_hindi_name(hindi_name)
             
-            # Combine name and constituency scores for English (70% name, 30% constituency)
-            if eng_constituency_score > 0 or eng_string_constituency_sim > 0:
-                avg_constituency_score = (eng_constituency_score + eng_string_constituency_sim) / 2
+            cached_entry = {
+                'original_eng_name': eng_name,
+                'original_hindi_name': hindi_name,
+                'constituency': constituency,
+                'source': name_entry['source'],
+                'eng_processed': eng_processed,
+                'hindi_processed': hindi_processed
+            }
+            
+            self.cached_mp_data.append(cached_entry)
+        
+        print(f"Cached {len(self.cached_mp_data)} MP entries")
+    
+    def _preprocess_english_name(self, eng_name, constituency):
+        """Preprocess English name and return cached data"""
+        if not isinstance(eng_name, str):
+            return {
+                'clean_name': "",
+                'norm_name': "",
+                'words': [],
+                'constituency': constituency
+            }
+        
+        clean_name = self.normalizer.extract_clean_name_and_constituency(eng_name, is_hindi=False)[0]
+        norm_name = self.normalizer.normalize_name(clean_name)
+        words = norm_name.split() if norm_name else []
+        
+        return {
+            'clean_name': clean_name,
+            'norm_name': norm_name,
+            'words': words,
+            'constituency': constituency
+        }
+    
+    def _preprocess_hindi_name(self, hindi_name):
+        """Preprocess Hindi name and return cached data"""
+        if not isinstance(hindi_name, str):
+            return {
+                'clean_name': "",
+                'norm_name': "",
+                'norm_name_no_space': "",
+                'words': [],
+                'consonants_only': "",
+                'consonants_no_space': ""
+            }
+        
+        clean_name = self.normalizer.extract_clean_name_and_constituency(hindi_name, is_hindi=True)[0]
+        norm_name, norm_name_no_space = self.normalizer.normalize_hindi_name(clean_name)
+        words = norm_name.split() if norm_name else []
+        
+        # Precompute consonant versions
+        consonants_only = self.hindi_processor.remove_matras(norm_name)
+        consonants_no_space = self.hindi_processor.remove_matras(norm_name_no_space)
+        
+        return {
+            'clean_name': clean_name,
+            'norm_name': norm_name,
+            'norm_name_no_space': norm_name_no_space,
+            'words': words,
+            'consonants_only': consonants_only,
+            'consonants_no_space': consonants_no_space
+        }
+    
+    def get_cached_data(self):
+        """Return the cached MP data"""
+        return self.cached_mp_data
+
+class MPNameMatcher:
+    """Main class that orchestrates the MP name matching process"""
+    
+    def __init__(self):
+        self.config = Config()
+        self.normalizer = NameNormalizer(self.config)
+        self.hindi_processor = HindiTextProcessor(self.config)
+        self.scorer = SimilarityScorer(self.config, self.normalizer, self.hindi_processor)
+        self.role_detector = SpecialRoleDetector(self.config, self.scorer)
+        self.cached_mp_data = CachedMPData(self.normalizer, self.hindi_processor)  # Add this line
+    
+    def find_top_matches_cached(self, speaker_name, cached_mp_data):
+        """Enhanced matching using cached MP data"""
+        matches = []
+        
+        # Preprocess speaker name once
+        speaker_clean_eng = self.normalizer.extract_clean_name_and_constituency(speaker_name, is_hindi=False)[0]
+        speaker_norm_eng = self.normalizer.normalize_name(speaker_clean_eng)
+        speaker_extracted_constituency = self.normalizer.extract_clean_name_and_constituency(speaker_name, is_hindi=False)[1]
+        
+        # For Hindi processing of speaker name
+        speaker_norm_hindi, speaker_norm_hindi_no_space = self.normalizer.normalize_hindi_name(speaker_clean_eng)
+        
+        for mp_entry in cached_mp_data:
+            eng_processed = mp_entry['eng_processed']
+            hindi_processed = mp_entry['hindi_processed']
+            
+            # Calculate English scores using cached data
+            eng_score, eng_matched_words = self._calculate_english_score_cached(
+                speaker_norm_eng, eng_processed)
+            
+            eng_constituency_score = self.scorer.calculate_constituency_similarity(
+                speaker_extracted_constituency, mp_entry['constituency'])
+            
+            # Calculate Hindi scores using cached data
+            hindi_score, hindi_matched_words = self._calculate_hindi_score_cached(
+                speaker_norm_hindi, speaker_norm_hindi_no_space, hindi_processed)
+            
+            # Calculate string similarities
+            eng_string_sim = self._calculate_english_string_similarity_cached(
+                speaker_norm_eng, eng_processed)
+            
+            hindi_string_sim = self._calculate_hindi_string_similarity_cached(
+                speaker_norm_hindi, speaker_norm_hindi_no_space, hindi_processed)
+            
+            # Combine scores (same logic as original)
+            if eng_constituency_score > 0:
                 eng_name_combined = eng_score * self.config.WORD_MATCH_WEIGHT + eng_string_sim * self.config.STRING_SIMILARITY_WEIGHT
-                eng_combined = (eng_name_combined * 0.7) + (avg_constituency_score * 0.3)
+                eng_combined = (eng_name_combined * 0.7) + (eng_constituency_score * 0.3)
             else:
                 eng_combined = eng_score * self.config.WORD_MATCH_WEIGHT + eng_string_sim * self.config.STRING_SIMILARITY_WEIGHT
             
-            # Combine scores for Hindi (no constituency)
             hindi_combined = hindi_score * self.config.WORD_MATCH_WEIGHT + hindi_string_sim * self.config.STRING_SIMILARITY_WEIGHT
             
-            # Determine which match is better
+            # Determine best match
             if eng_combined >= hindi_combined:
                 score = eng_combined
                 matched_words = eng_matched_words
@@ -701,53 +796,189 @@ class MPNameMatcher:
                 matched_words = hindi_matched_words
                 string_sim = hindi_string_sim
             
-            # Only add matches with meaningful scores or names
-            if score > 0 or eng_name or hindi_name:
+            if score > 0 or mp_entry['original_eng_name'] or mp_entry['original_hindi_name']:
                 matches.append({
                     'score': score,
-                    'eng_name': eng_name,
-                    'hindi_name': hindi_name,
+                    'eng_name': mp_entry['original_eng_name'],
+                    'hindi_name': mp_entry['original_hindi_name'],
                     'matched_words': matched_words,
                     'word_count': len(matched_words),
                     'string_sim': string_sim,
-                    'source': name_entry['source']
+                    'source': mp_entry['source']
                 })
         
-        # Sort matches by combined score first, then word count, then string similarity
+        # Sort and return top matches (same logic as original)
         matches.sort(key=lambda x: (-x['score'], -x['word_count'], -x['string_sim']))
-        
-        # Filter out matches with empty names AND zero scores
         valid_matches = [m for m in matches if m['score'] > 0 or m['eng_name'] or m['hindi_name']]
         
-        # Return top 2 valid matches
         top_matches = []
         for i in range(min(2, len(valid_matches))):
             match = valid_matches[i]
             top_matches.append((match['score'], match['eng_name'], match['hindi_name']))
         
-        # Ensure we always return exactly 2 matches
         while len(top_matches) < 2:
             if len(top_matches) == 1:
-                # Duplicate the first match if we only have one
                 top_matches.append(top_matches[0])
             else:
-                # Add empty match if we have none
                 top_matches.append((0, "", ""))
         
         return top_matches
+    
+    def _calculate_english_score_cached(self, speaker_norm, eng_processed):
+        """Calculate English word match score using cached data"""
+        if not speaker_norm or not eng_processed['norm_name']:
+            return 0, []
+        
+        # Check for exact match
+        if speaker_norm == eng_processed['norm_name']:
+            return self.config.EXACT_MATCH_SCORE, eng_processed['words']
+        
+        # Check for containment
+        if eng_processed['norm_name'] in speaker_norm:
+            coverage = len(eng_processed['norm_name']) / len(speaker_norm) if len(speaker_norm) > 0 else 0
+            base_score = self.config.CONTAINMENT_BASE_SCORE
+            coverage_bonus = coverage * self.config.COVERAGE_BONUS_MULTIPLIER
+            return min(base_score + coverage_bonus, 1.0), eng_processed['words']
+        
+        # Use FuzzyWuzzy for comprehensive matching
+        from fuzzywuzzy import fuzz
+        basic_ratio = fuzz.ratio(eng_processed['norm_name'], speaker_norm) / 100.0
+        partial_ratio = fuzz.partial_ratio(eng_processed['norm_name'], speaker_norm) / 100.0
+        token_sort_ratio = fuzz.token_sort_ratio(eng_processed['norm_name'], speaker_norm) / 100.0
+        token_set_ratio = fuzz.token_set_ratio(eng_processed['norm_name'], speaker_norm) / 100.0
+        
+        weighted_score = (
+            token_set_ratio * 0.35 +
+            token_sort_ratio * 0.25 +
+            partial_ratio * 0.25 +
+            basic_ratio * 0.15
+        )
+        
+        if weighted_score >= self.config.FALLBACK_THRESHOLD:
+            return weighted_score, eng_processed['words']
+        
+        return 0, []
+    
+    def _calculate_hindi_score_cached(self, speaker_norm, speaker_norm_no_space, hindi_processed):
+        """Calculate Hindi word match score using cached data"""
+        if not hindi_processed['norm_name']:
+            return 0, []
+        
+        # Check no-space containment
+        if (speaker_norm_no_space and hindi_processed['norm_name_no_space'] and 
+            hindi_processed['norm_name_no_space'] in speaker_norm_no_space):
+            coverage = len(hindi_processed['norm_name_no_space']) / len(speaker_norm_no_space) if len(speaker_norm_no_space) > 0 else 0
+            base_score = self.config.NO_SPACE_CONTAINMENT_SCORE
+            coverage_bonus = coverage * self.config.COVERAGE_BONUS_MULTIPLIER
+            return min(base_score + coverage_bonus, 1.0), hindi_processed['words']
+        
+        # Check exact match (no spaces)
+        if speaker_norm_no_space == hindi_processed['norm_name_no_space']:
+            return self.config.EXACT_MATCH_SCORE, hindi_processed['words']
+        
+        # Check no-space similarity
+        if speaker_norm_no_space and hindi_processed['norm_name_no_space']:
+            from fuzzywuzzy import fuzz
+            no_space_similarity = fuzz.ratio(hindi_processed['norm_name_no_space'], speaker_norm_no_space) / 100.0
+            if no_space_similarity >= self.config.NO_SPACE_SIMILARITY_THRESHOLD:
+                return no_space_similarity * self.config.NO_SPACE_SIMILARITY_SCALE, hindi_processed['words']
+        
+        # Check regular containment
+        if hindi_processed['norm_name'] in speaker_norm:
+            coverage = len(hindi_processed['norm_name']) / len(speaker_norm) if len(speaker_norm) > 0 else 0
+            base_score = self.config.CONTAINMENT_BASE_SCORE
+            coverage_bonus = coverage * self.config.COVERAGE_BONUS_MULTIPLIER
+            return min(base_score + coverage_bonus, 1.0), hindi_processed['words']
+        
+        # Consonant-based comparison
+        if (speaker_norm_no_space and hindi_processed['consonants_no_space'] and 
+            hindi_processed['consonants_no_space']):
+            from difflib import SequenceMatcher
+            speaker_consonants = self.hindi_processor.remove_matras(speaker_norm_no_space)
+            if speaker_consonants == hindi_processed['consonants_no_space']:
+                return self.config.CONSONANT_MATCH_SCORE, hindi_processed['words']
+            
+            consonant_similarity = SequenceMatcher(None, speaker_consonants, hindi_processed['consonants_no_space']).ratio()
+            if consonant_similarity >= self.config.CONSONANT_SIMILARITY_THRESHOLD:
+                return consonant_similarity * self.config.CONSONANT_SIMILARITY_SCALE, hindi_processed['words']
+        
+        return 0, []
+    
+    def _calculate_english_string_similarity_cached(self, speaker_norm, eng_processed):
+        """Calculate English string similarity using cached data"""
+        if not speaker_norm or not eng_processed['norm_name']:
+            return 0
+        
+        # Check for containment
+        if eng_processed['norm_name'] in speaker_norm:
+            coverage = len(eng_processed['norm_name']) / len(speaker_norm) if len(speaker_norm) > 0 else 0
+            return 0.9 + (coverage * 0.1)
+        
+        # Use FuzzyWuzzy
+        from fuzzywuzzy import fuzz
+        basic_ratio = fuzz.ratio(eng_processed['norm_name'], speaker_norm) / 100.0
+        partial_ratio = fuzz.partial_ratio(eng_processed['norm_name'], speaker_norm) / 100.0
+        token_sort_ratio = fuzz.token_sort_ratio(eng_processed['norm_name'], speaker_norm) / 100.0
+        token_set_ratio = fuzz.token_set_ratio(eng_processed['norm_name'], speaker_norm) / 100.0
+        
+        weighted_similarity = (
+            token_set_ratio * 0.3 +
+            token_sort_ratio * 0.3 +
+            partial_ratio * 0.25 +
+            basic_ratio * 0.15
+        )
+        
+        return weighted_similarity
+    
+    def _calculate_hindi_string_similarity_cached(self, speaker_norm, speaker_norm_no_space, hindi_processed):
+        """Calculate Hindi string similarity using cached data"""
+        if not hindi_processed['norm_name']:
+            return 0
+        
+        # Check no-space containment
+        if (speaker_norm_no_space and hindi_processed['norm_name_no_space'] and 
+            hindi_processed['norm_name_no_space'] in speaker_norm_no_space):
+            coverage = len(hindi_processed['norm_name_no_space']) / len(speaker_norm_no_space) if len(speaker_norm_no_space) > 0 else 0
+            return 0.9 + (coverage * 0.1)
+        
+        # Use FuzzyWuzzy for no-space similarity
+        if speaker_norm_no_space and hindi_processed['norm_name_no_space']:
+            from fuzzywuzzy import fuzz
+            no_space_sim = fuzz.ratio(hindi_processed['norm_name_no_space'], speaker_norm_no_space) / 100.0
+            if no_space_sim >= self.config.NO_SPACE_SIMILARITY_THRESHOLD:
+                return no_space_sim * self.config.NO_SPACE_SIMILARITY_SCALE
+        
+        # Regular similarity
+        if hindi_processed['norm_name'] in speaker_norm:
+            coverage = len(hindi_processed['norm_name']) / len(speaker_norm) if len(speaker_norm) > 0 else 0
+            return 0.8 + (coverage * 0.1)
+        
+        if speaker_norm and hindi_processed['norm_name']:
+            from fuzzywuzzy import fuzz
+            regular_sim = fuzz.ratio(hindi_processed['norm_name'], speaker_norm) / 100.0
+            return regular_sim * self.config.REGULAR_SIMILARITY_SCALE
+        
+        return 0
+
+
+# Replace the match_mp_names method in MPNameMatcher class:
 
     def match_mp_names(self, mp_file_path, speech_file_path, output_path, rajya_sabha_file_path,
                       mp_eng_name_col_idx=2, mp_hindi_name_col_idx=3, speech_speaker_col_idx=2):
-        """Main matching function with enhanced constituency-based matching"""
+        """Main matching function with caching for improved performance"""
         try:
             # Load all names data from both sources
             all_names_data = DataLoader.load_all_names_data(
                 mp_file_path, rajya_sabha_file_path, mp_eng_name_col_idx, mp_hindi_name_col_idx)
             
+            # Preprocess and cache MP data once
+            self.cached_mp_data.preprocess_mp_data(all_names_data)
+            cached_data = self.cached_mp_data.get_cached_data()
+            
             print(f"Reading speech data from {speech_file_path}...")
             speech_data = pd.read_csv(speech_file_path)
             
-            print(f"Found {len(all_names_data)} total names and {len(speech_data)} speech entries")
+            print(f"Found {len(cached_data)} cached MP names and {len(speech_data)} speech entries")
             
             # Create a new dataframe for output
             result_df = speech_data.copy()
@@ -768,16 +999,14 @@ class MPNameMatcher:
                     continue
                     
                 if speaker_name:
-                    # First check if it's a nominated member (always check as English for special processing)
+                    # First check if it's a nominated member
                     clean_name, _ = self.normalizer.extract_clean_name_and_constituency(speaker_name, is_hindi=False)
                     if clean_name.startswith("NOMINATED_MEMBER:"):
                         # Extract the actual name and add (Nominated)
                         actual_name = clean_name.replace("NOMINATED_MEMBER:", "").strip()
-                        # Capitalize properly
                         formatted_name = ' '.join(word.capitalize() for word in actual_name.split())
                         nominated_name = f"{formatted_name} (Nominated)"
                         
-                        # Set both preferences to the same nominated name
                         result_df.at[idx, 'eng name(pref 1)'] = re.sub(r'\s*\(.*?\)', '', nominated_name).strip() + ' (Nominated)'
                         result_df.at[idx, 'hind name(pref 1)'] = "nan"
                         result_df.at[idx, 'eng name(pref 2)'] = re.sub(r'\s*\(.*?\)', '', nominated_name).strip() + ' (Nominated)'
@@ -792,8 +1021,8 @@ class MPNameMatcher:
                             result_df.at[idx, 'eng name(pref 2)'] = eng_title
                             result_df.at[idx, 'hind name(pref 2)'] = hindi_title
                         else:
-                            # Use enhanced MP name matching with constituency consideration
-                            top_matches = self.find_top_matches(speaker_name, all_names_data)
+                            # Use cached MP name matching
+                            top_matches = self.find_top_matches_cached(speaker_name, cached_data)
                             
                             # Assign matches to the result dataframe
                             result_df.at[idx, 'eng name(pref 1)'] = top_matches[0][1]
