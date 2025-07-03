@@ -8,7 +8,7 @@ import sys
 
 class Config:
     # Similarity thresholds
-    SPECIAL_ROLE_DETECTION_THRESHOLD = 0.6
+    SPECIAL_ROLE_DETECTION_THRESHOLD = 0.75
     HIGH_SIMILARITY_THRESHOLD = 0.8
     FALLBACK_THRESHOLD = 0.5
     CONSONANT_SIMILARITY_THRESHOLD = 0.7
@@ -117,13 +117,18 @@ class NameNormalizer:
         """Extract the core name and constituency from speaker string"""
         if not isinstance(speaker_name, str):
             return "", ""
-    
+
         clean_name = speaker_name.lower().strip()
         constituency = ""
         
         # For Hindi names, return the full name without any processing
         if is_hindi:
             return clean_name, ""
+        
+        # Check for "SUBMISSIONS BY MEMBERS" with 85% accuracy
+        if self._contains_phrase_with_accuracy(clean_name, "submissions by members", 0.85):
+            # Return special marker for submissions by members
+            return "SUBMISSIONS_BY_MEMBERS:" + clean_name, ""
         
         # Check for brackets and handle special cases
         bracket_match = re.search(r'\([^)]+\)', clean_name)
@@ -149,15 +154,16 @@ class NameNormalizer:
         # Split into words and filter out titles
         words = clean_name.split()
         filtered_words = []
-    
+
         for word in words:
             word_clean = word.strip('.,')
             if (word_clean not in self.config.HINDI_TITLES and
                 word_clean.lower() not in self.config.ENGLISH_TITLES):
                 filtered_words.append(word_clean)
-    
+
         final_name = ' '.join(filtered_words).strip()
         return final_name, constituency
+
 
     def _contains_phrase_with_accuracy(self, text, target_phrase, threshold):
         """Check if target phrase exists in text with given accuracy threshold using fuzzy matching"""
@@ -513,27 +519,51 @@ class SpecialRoleDetector:
         """
         if not isinstance(speaker_name, str) or not speaker_name:
             return False, None, "", ""
-        
+    
+        # Quick check for Hindi special roles - direct containment
+        for role_type, role_refs in self.config.SPECIAL_ROLES.items():
+            for ref in role_refs['hindi']:
+                if ref in speaker_name:
+                    return True, role_type, self._get_standard_title(role_type, 'english'), self._get_standard_title(role_type, 'hindi')
+    
+        # Track the best match across all roles
+        best_match = {
+            'score': 0,
+            'role_type': None,
+            'english_title': '',
+            'hindi_title': ''
+        }
+    
         # Check each special role
         for role_type, role_refs in self.config.SPECIAL_ROLES.items():
             # Check English references
             for ref in role_refs['english']:
-                eng_score, _ = self.scorer.check_name_words_match(speaker_name, ref, is_hindi=False)
+                eng_score, *_ = self.scorer.check_name_words_match(speaker_name, ref, is_hindi=False)
                 sim_score = self.scorer.calculate_string_similarity(speaker_name, ref, is_hindi=False)
                 combined_score = eng_score * self.config.WORD_MATCH_WEIGHT + sim_score * self.config.STRING_SIMILARITY_WEIGHT
-                
-                if combined_score >= self.config.SPECIAL_ROLE_DETECTION_THRESHOLD:
-                    return True, role_type, self._get_standard_title(role_type, 'english'), self._get_standard_title(role_type, 'hindi')
             
+                if combined_score > best_match['score']:
+                    best_match['score'] = combined_score
+                    best_match['role_type'] = role_type
+                    best_match['english_title'] = self._get_standard_title(role_type, 'english')
+                    best_match['hindi_title'] = self._get_standard_title(role_type, 'hindi')
+        
             # Check Hindi references
             for ref in role_refs['hindi']:
-                hindi_score, _ = self.scorer.check_name_words_match(speaker_name, ref, is_hindi=True)
+                hindi_score, *_ = self.scorer.check_name_words_match(speaker_name, ref, is_hindi=True)
                 sim_score = self.scorer.calculate_string_similarity(speaker_name, ref, is_hindi=True)
                 combined_score = hindi_score * self.config.WORD_MATCH_WEIGHT + sim_score * self.config.STRING_SIMILARITY_WEIGHT
-                
-                if combined_score >= self.config.SPECIAL_ROLE_DETECTION_THRESHOLD:
-                    return True, role_type, self._get_standard_title(role_type, 'english'), self._get_standard_title(role_type, 'hindi')
-        
+            
+                if combined_score > best_match['score']:
+                    best_match['score'] = combined_score
+                    best_match['role_type'] = role_type
+                    best_match['english_title'] = self._get_standard_title(role_type, 'english')
+                    best_match['hindi_title'] = self._get_standard_title(role_type, 'hindi')
+    
+        # Return the best match if it meets the threshold
+        if best_match['score'] >= self.config.SPECIAL_ROLE_DETECTION_THRESHOLD:
+            return True, best_match['role_type'], best_match['english_title'], best_match['hindi_title']
+    
         return False, None, "", ""
     
     def _get_standard_title(self, role_type, language):
@@ -543,7 +573,7 @@ class SpecialRoleDetector:
                 'english': 'HON. SPEAKER',
                 'hindi': 'माननीय अध्यक्ष'
             },
-            'deputy speaker': {
+            'deputy_speaker': {
                 'english': 'DEPUTY SPEAKER',
                 'hindi': 'माननीय अध्यक्ष'
             },
@@ -1040,6 +1070,12 @@ class MPNameMatcher:
                         result_df.at[idx, 'hind name(pref 1)'] = "nan"
                         result_df.at[idx, 'eng name(pref 2)'] = re.sub(r'\s*\(.*?\)', '', nominated_name).strip() + ' (Nominated)'
                         result_df.at[idx, 'hind name(pref 2)'] = "nan"
+                    elif clean_name.startswith("SUBMISSIONS_BY_MEMBERS:"):
+                        # For submissions by members, keep the original speaker name as is
+                        result_df.at[idx, 'eng name(pref 1)'] = speaker_name
+                        result_df.at[idx, 'hind name(pref 1)'] = "nan"
+                        result_df.at[idx, 'eng name(pref 2)'] = speaker_name
+                        result_df.at[idx, 'hind name(pref 2)'] = "nan"
                     else:
                         # Check if the speaker is a special parliamentary member
                         is_special, role_type, eng_title, hindi_title = self.role_detector.check_special_members(speaker_name)
@@ -1074,7 +1110,6 @@ class MPNameMatcher:
                             result_df.at[idx, 'hind name(pref 1)'] = match1_hindi
                             result_df.at[idx, 'eng name(pref 2)'] = match2_eng
                             result_df.at[idx, 'hind name(pref 2)'] = match2_hindi
-                
                 # Print progress
                 if (idx + 1) % 100 == 0 or idx == total_rows - 1:
                     print(f"Progress: {idx + 1}/{total_rows} entries processed ({(idx + 1)/total_rows*100:.1f}%)")
@@ -1097,9 +1132,9 @@ if __name__ == "__main__":
     print(f"Starting enhanced MP name matching process with dual data sources...")
     
     # Default file paths and column indices
-    mp_file_path = "15th_Lok_Sabha_Members.csv"
-    rajya_sabha_file_path = "rajyasabha_ministers_15.csv"
-    speech_file_path = "lsd_15_13_2013-03-22.csv"
+    mp_file_path = "16th_Lok_Sabha_Members.csv"
+    rajya_sabha_file_path = "rajyasabha_ministers_16.csv"
+    speech_file_path = "lsd_16_04_2015-05-13.csv"
     output_path = "matched_speeches.csv"
     
     # Default column indices (0-based)
