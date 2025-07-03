@@ -121,30 +121,31 @@ class NameNormalizer:
         """Extract the core name and constituency from speaker string"""
         if not isinstance(speaker_name, str):
             return "", ""
-
         clean_name = speaker_name.lower().strip()
         constituency = ""
-        
+    
         # For Hindi names, return the full name without any processing
         if is_hindi:
             return clean_name, ""
-        
+    
         # Check for "SUBMISSIONS BY MEMBERS" with 85% accuracy
         if self._contains_phrase_with_accuracy(clean_name, "submissions by members", 0.85):
             # Return special marker for submissions by members
             return "SUBMISSIONS_BY_MEMBERS:" + clean_name, ""
-        
-        # Check for brackets and handle special cases
-        bracket_match = re.search(r'\([^)]+\)', clean_name)
-        if bracket_match:
+    
+        # Check for brackets and handle special cases - find the LAST set of brackets
+        bracket_matches = list(re.finditer(r'\([^)]+\)', clean_name))
+        if bracket_matches:
+            # Get the last (rightmost) bracket match
+            bracket_match = bracket_matches[-1]
             text_before_bracket = clean_name[:bracket_match.start()].strip()
             bracketed_content = bracket_match.group(0)[1:-1].strip()  # Remove the brackets
-            
+        
             # Check if "nominated" appears in brackets with 85% accuracy
             if self._contains_phrase_with_accuracy(bracketed_content, "nominated", 0.85):
                 # Return special marker for nominated members
                 return "NOMINATED_MEMBER:" + text_before_bracket, ""
-            
+        
             # Check if "minister of" appears before brackets with 85% accuracy
             target_phrase = "minister of"
             if self._contains_phrase_with_accuracy(text_before_bracket, target_phrase, 0.85):
@@ -154,17 +155,15 @@ class NameNormalizer:
                 # Store bracketed content as constituency and continue with normal processing
                 constituency = bracketed_content
                 clean_name = text_before_bracket
-        
+    
         # Split into words and filter out titles
         words = clean_name.split()
         filtered_words = []
-
         for word in words:
             word_clean = word.strip('.,')
             if (word_clean not in self.config.HINDI_TITLES and
                 word_clean.lower() not in self.config.ENGLISH_TITLES):
                 filtered_words.append(word_clean)
-
         final_name = ' '.join(filtered_words).strip()
         return final_name, constituency
 
@@ -808,73 +807,126 @@ class MPNameMatcher:
         self.hindi_processor = HindiTextProcessor(self.config)
         self.scorer = SimilarityScorer(self.config, self.normalizer, self.hindi_processor)
         self.role_detector = SpecialRoleDetector(self.config, self.scorer)
-        self.cached_mp_data = CachedMPData(self.normalizer, self.hindi_processor)  # Add this line
+        self.cached_mp_data = CachedMPData(self.normalizer, self.hindi_processor)
+    
+    def _detect_primary_language(self, speaker_name):
+        """
+        Detect if the speaker name is primarily Hindi or English
+        Returns 'hindi' if Hindi characters > 50%, else 'english'
+        """
+        if not speaker_name:
+            return 'english'
+        
+        # Remove numbers, special characters, and spaces for analysis
+        cleaned_name = ''.join(char for char in speaker_name if char.isalpha())
+        
+        if not cleaned_name:
+            return 'english'
+        
+        hindi_char_count = 0
+        total_char_count = len(cleaned_name)
+        
+        for char in cleaned_name:
+            # Check if character is in Devanagari script range (Hindi)
+            if '\u0900' <= char <= '\u097F':
+                hindi_char_count += 1
+        
+        hindi_percentage = hindi_char_count / total_char_count if total_char_count > 0 else 0
+        
+        return 'hindi' if hindi_percentage > 0.5 else 'english'
     
     def find_top_matches_cached(self, speaker_name, cached_mp_data):
-        """Enhanced matching using cached MP data"""
+        """Enhanced matching using cached MP data with language-first approach"""
         matches = []
         
-        # Preprocess speaker name once
-        speaker_clean_eng = self.normalizer.extract_clean_name_and_constituency(speaker_name, is_hindi=False)[0]
-        speaker_norm_eng = self.normalizer.normalize_name(speaker_clean_eng)
-        speaker_extracted_constituency = self.normalizer.extract_clean_name_and_constituency(speaker_name, is_hindi=False)[1]
+        # Determine primary language of speaker name
+        primary_language = self._detect_primary_language(speaker_name)
         
-        # For Hindi processing of speaker name
-        speaker_norm_hindi, speaker_norm_hindi_no_space = self.normalizer.normalize_hindi_name(speaker_clean_eng)
+        # Preprocess speaker name once based on primary language
+        if primary_language == 'hindi':
+            speaker_clean_eng = self.normalizer.extract_clean_name_and_constituency(speaker_name, is_hindi=True)[0]
+            speaker_norm_hindi, speaker_norm_hindi_no_space = self.normalizer.normalize_hindi_name(speaker_clean_eng)
+            speaker_extracted_constituency = self.normalizer.extract_clean_name_and_constituency(speaker_name, is_hindi=True)[1]
+        else:
+            speaker_clean_eng = self.normalizer.extract_clean_name_and_constituency(speaker_name, is_hindi=False)[0]
+            speaker_norm_eng = self.normalizer.normalize_name(speaker_clean_eng)
+            speaker_extracted_constituency = self.normalizer.extract_clean_name_and_constituency(speaker_name, is_hindi=False)[1]
         
         for mp_entry in cached_mp_data:
-            eng_processed = mp_entry['eng_processed']
-            hindi_processed = mp_entry['hindi_processed']
-            
-            # Calculate English scores using cached data
-            eng_score, eng_matched_words = self._calculate_english_score_cached(
-                speaker_norm_eng, eng_processed)
-            
-            eng_constituency_score = self.scorer.calculate_constituency_similarity(
-                speaker_extracted_constituency, mp_entry['constituency'])
-            
-            # Calculate Hindi scores using cached data
-            hindi_score, hindi_matched_words = self._calculate_hindi_score_cached(
-                speaker_norm_hindi, speaker_norm_hindi_no_space, hindi_processed)
-            
-            # Calculate string similarities
-            eng_string_sim = self._calculate_english_string_similarity_cached(
-                speaker_norm_eng, eng_processed)
-            
-            hindi_string_sim = self._calculate_hindi_string_similarity_cached(
-                speaker_norm_hindi, speaker_norm_hindi_no_space, hindi_processed)
-            
-            # Combine scores (same logic as original)
-            if eng_constituency_score > 0:
-                eng_name_combined = eng_score * self.config.WORD_MATCH_WEIGHT + eng_string_sim * self.config.STRING_SIMILARITY_WEIGHT
-                eng_combined = (eng_name_combined * 0.7) + (eng_constituency_score * 0.3)
-            else:
-                eng_combined = eng_score * self.config.WORD_MATCH_WEIGHT + eng_string_sim * self.config.STRING_SIMILARITY_WEIGHT
-            
-            hindi_combined = hindi_score * self.config.WORD_MATCH_WEIGHT + hindi_string_sim * self.config.STRING_SIMILARITY_WEIGHT
-            
-            # Determine best match
-            if eng_combined >= hindi_combined:
-                score = eng_combined
-                matched_words = eng_matched_words
-                string_sim = eng_string_sim
-            else:
-                score = hindi_combined
+            if primary_language == 'hindi':
+                # Only process Hindi matching
+                hindi_processed = mp_entry['hindi_processed']
+                
+                # Skip if no Hindi data available
+                if not hindi_processed['norm_name']:
+                    continue
+                
+                # Calculate Hindi scores using cached data
+                hindi_score, hindi_matched_words = self._calculate_hindi_score_cached(
+                    speaker_norm_hindi, speaker_norm_hindi_no_space, hindi_processed)
+                
+                # Calculate constituency score
+                constituency_score = self.scorer.calculate_constituency_similarity(
+                    speaker_extracted_constituency, mp_entry['constituency'])
+                
+                # Calculate string similarities
+                hindi_string_sim = self._calculate_hindi_string_similarity_cached(
+                    speaker_norm_hindi, speaker_norm_hindi_no_space, hindi_processed)
+                
+                # Combine scores
+                if constituency_score > 0:
+                    hindi_name_combined = hindi_score * self.config.WORD_MATCH_WEIGHT + hindi_string_sim * self.config.STRING_SIMILARITY_WEIGHT
+                    combined_score = (hindi_name_combined * 0.7) + (constituency_score * 0.3)
+                else:
+                    combined_score = hindi_score * self.config.WORD_MATCH_WEIGHT + hindi_string_sim * self.config.STRING_SIMILARITY_WEIGHT
+                
                 matched_words = hindi_matched_words
                 string_sim = hindi_string_sim
+                
+            else:
+                # Only process English matching
+                eng_processed = mp_entry['eng_processed']
+                
+                # Skip if no English data available
+                if not eng_processed['norm_name']:
+                    continue
+                
+                # Calculate English scores using cached data
+                eng_score, eng_matched_words = self._calculate_english_score_cached(
+                    speaker_norm_eng, eng_processed)
+                
+                # Calculate constituency score
+                constituency_score = self.scorer.calculate_constituency_similarity(
+                    speaker_extracted_constituency, mp_entry['constituency'])
+                
+                # Calculate string similarities
+                eng_string_sim = self._calculate_english_string_similarity_cached(
+                    speaker_norm_eng, eng_processed)
+                
+                # Combine scores
+                if constituency_score > 0:
+                    eng_name_combined = eng_score * self.config.WORD_MATCH_WEIGHT + eng_string_sim * self.config.STRING_SIMILARITY_WEIGHT
+                    combined_score = (eng_name_combined * 0.7) + (constituency_score * 0.3)
+                else:
+                    combined_score = eng_score * self.config.WORD_MATCH_WEIGHT + eng_string_sim * self.config.STRING_SIMILARITY_WEIGHT
+                
+                matched_words = eng_matched_words
+                string_sim = eng_string_sim
             
-            if score > 0 or mp_entry['original_eng_name'] or mp_entry['original_hindi_name']:
+            # Add to matches if score is valid
+            if combined_score > 0 or mp_entry['original_eng_name'] or mp_entry['original_hindi_name']:
                 matches.append({
-                    'score': score,
+                    'score': combined_score,
                     'eng_name': mp_entry['original_eng_name'],
                     'hindi_name': mp_entry['original_hindi_name'],
                     'matched_words': matched_words,
                     'word_count': len(matched_words),
                     'string_sim': string_sim,
-                    'source': mp_entry['source']
+                    'source': mp_entry['source'],
+                    'primary_language': primary_language
                 })
         
-        # Sort and return top matches (same logic as original)
+        # Sort and return top matches
         matches.sort(key=lambda x: (-x['score'], -x['word_count'], -x['string_sim']))
         valid_matches = [m for m in matches if m['score'] > 0 or m['eng_name'] or m['hindi_name']]
         
@@ -1027,8 +1079,6 @@ class MPNameMatcher:
         
         return 0
 
-
-
     def match_mp_names(self, mp_file_path, speech_file_path, output_path, rajya_sabha_file_path, mp_eng_name_col_idx=2, mp_hindi_name_col_idx=3, speech_speaker_col_idx=2):
         """Main matching function with caching for improved performance and nominated member handling"""
         try:
@@ -1094,7 +1144,7 @@ class MPNameMatcher:
                             result_df.at[idx, 'eng name(pref 2)'] = eng_title
                             result_df.at[idx, 'hind name(pref 2)'] = hindi_title
                         else:
-                            # Use cached MP name matching (including any nominated members added earlier)
+                            # Use cached MP name matching with language-first approach
                             cached_data = self.cached_mp_data.get_cached_data()
                             top_matches = self.find_top_matches_cached(speaker_name, cached_data)
                             
@@ -1118,6 +1168,7 @@ class MPNameMatcher:
                             result_df.at[idx, 'hind name(pref 1)'] = match1_hindi
                             result_df.at[idx, 'eng name(pref 2)'] = match2_eng
                             result_df.at[idx, 'hind name(pref 2)'] = match2_hindi
+                
                 # Print progress
                 if (idx + 1) % 100 == 0 or idx == total_rows - 1:
                     print(f"Progress: {idx + 1}/{total_rows} entries processed ({(idx + 1)/total_rows*100:.1f}%)")
@@ -1142,7 +1193,7 @@ if __name__ == "__main__":
     # Default file paths and column indices
     mp_file_path = "16th_Lok_Sabha_Members.csv"
     rajya_sabha_file_path = "rajyasabha_ministers_16.csv"
-    speech_file_path = "lsd_16_04_2015-05-13.csv"
+    speech_file_path = "lsd_16_03_2014-12-23.csv"
     output_path = "matched_speeches.csv"
     
     # Default column indices (0-based)
