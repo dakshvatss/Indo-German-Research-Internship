@@ -56,6 +56,10 @@ class Config:
             'english': ['deputy speaker'],
             'hindi': ['उपाध्यक्ष', 'माननीय उपाध्यक्ष']
         },
+        'some_hon_members': {
+            'english': ['some hon. members', 'several hon. members', 'hon. members'],
+            'hindi': ['कुछ माननीय सदस्य', 'कई माननीय सदस्य', 'माननीय सदस्य']
+        },
         'chairperson': {
             'english': ['hon. chairperson', 'chairperson', 'chair'],
             'hindi': ['माननीय सभापति', 'सभापति']
@@ -261,7 +265,7 @@ class SimilarityScorer:
             constituency_score = self.calculate_constituency_similarity(extracted_constituency, mp_constituency)
         
         # Calculate name similarity using existing logic
-        name_score, matched_words = self.check_name_words_match(speaker_name, mp_name, is_hindi)
+        name_score, matched_words = self.check_name_words_match(clean_speaker, clean_mp, is_hindi)
         
         return name_score, matched_words, constituency_score
     
@@ -572,6 +576,10 @@ class SpecialRoleDetector:
             'speaker': {
                 'english': 'HON. SPEAKER',
                 'hindi': 'माननीय अध्यक्ष'
+            },
+            'some_hon_members': {
+                'english': 'SOME HON. MEMBERS',
+                'hindi': 'कुछ माननीय सदस्य'
             },
             'deputy_speaker': {
                 'english': 'DEPUTY SPEAKER',
@@ -1072,9 +1080,9 @@ class MPNameMatcher:
                         result_df.at[idx, 'hind name(pref 2)'] = "nan"
                     elif clean_name.startswith("SUBMISSIONS_BY_MEMBERS:"):
                         # For submissions by members, keep the original speaker name as is
-                        result_df.at[idx, 'eng name(pref 1)'] = speaker_name
+                        result_df.at[idx, 'eng name(pref 1)'] = f"{speaker_name} (Statement)"
                         result_df.at[idx, 'hind name(pref 1)'] = "nan"
-                        result_df.at[idx, 'eng name(pref 2)'] = speaker_name
+                        result_df.at[idx, 'eng name(pref 2)'] = f"{speaker_name} (Statement)"
                         result_df.at[idx, 'hind name(pref 2)'] = "nan"
                     else:
                         # Check if the speaker is a special parliamentary member
