@@ -11,7 +11,7 @@ class ProcessingMode(Enum):
     INIT = "INIT"
     PAGE = "PAGE"
     SPEAKER_SCAN = "SPEAKER_SCAN"
-    POTENTIAL_SPEAKER = "POTENTIAL_SPEAKER"  # New state for multi-line speakers
+    POTENTIAL_SPEAKER = "POTENTIAL_SPEAKER"  
     SPEECH = "SPEECH"
 
 class ParliamentProcessor:
@@ -116,6 +116,18 @@ class ParliamentProcessor:
         # Check first two words if available
         check_words = words[:2] if len(words) >= 2 else words[:1]
         return any(self.is_speaker_formatted(word) for word in check_words)
+    
+    def has_sufficient_letters(self, text: str) -> bool:
+        """Check if text has at least 3 letters (English and Hindi)."""
+        letter_count = 0
+        for char in text:
+            # Check for English letters
+            if char.isalpha():
+                letter_count += 1
+            # Check for Hindi/Devanagari letters (U+0900 to U+097F)
+            elif '\u0900' <= char <= '\u097F':
+                letter_count += 1
+        return letter_count >= 3
 
     def validate_speaker(self, text: str) -> Optional[str]:
         """Validate text as a speaker."""
@@ -128,34 +140,41 @@ class ParliamentProcessor:
             
         speaker_part, _ = self.split_at_delimiter(text)
         
+        # Clean the speaker part for validation
+        cleaned_speaker = self.clean_speaker_text(speaker_part)
+        
+        # Check if speaker has at least 4 letters
+        if not self.has_sufficient_letters(cleaned_speaker):
+            return None
+        
         # Validate speaker formatting
         words = speaker_part.split()
         formatted_words = sum(1 for word in words if self.is_speaker_formatted(word))
-        
+
         if formatted_words == 0 or len(words) - formatted_words > 3:
             return None
             
-        return self.clean_speaker_text(speaker_part)
-
+        return cleaned_speaker
+    
     def process_potential_speaker_mode(self, line: str) -> bool:
         """Process line in POTENTIAL_SPEAKER mode."""
         self.potential_speaker_lines.append(line)
-        
+
         # If we find a delimiter in this line
         if self.has_delimiter(line):
             full_text = ' '.join(self.potential_speaker_lines)
             speaker = self.validate_speaker(full_text)
-            
+
             if speaker:
                 if self.current_speaker:
                     self.save_current_record()
                 self.current_speaker = speaker
-                
+
                 # Extract speech part after delimiter
                 _, speech_start = self.split_at_delimiter(full_text)
                 if speech_start:
                     self.current_speech = [speech_start]
-                
+
                 self.mode = ProcessingMode.SPEECH
                 self.potential_speaker_lines = []
                 return True
@@ -166,12 +185,12 @@ class ParliamentProcessor:
                 self.potential_speaker_lines = []
                 self.mode = ProcessingMode.SPEECH
                 return False
-        
+
         # Count non-speaker formatted words
         non_speaker = sum(1 for word in line.split() 
                          if not self.is_speaker_formatted(word))
         self.non_speaker_words += non_speaker
-        
+
         # If too many non-speaker words, treat as speech
         if self.non_speaker_words > 3:
             if self.current_speaker:
@@ -180,7 +199,7 @@ class ParliamentProcessor:
             self.non_speaker_words = 0
             self.mode = ProcessingMode.SPEECH
             return False
-            
+
         return True
 
     def process_line(self, line: str):
