@@ -49,11 +49,11 @@ class Config:
     
     SPECIAL_ROLES = {
         'speaker': {
-            'english': ['hon. speaker', 'madam speaker', 'speaker'],
+            'english': ['hon. speaker', 'madam speaker'],
             'hindi': ['माननीय अध्यक्ष', 'अध्यक्ष']
         },
         'deputy_speaker': {
-            'english': ['deputy speaker'],
+            'english': ['hon. deputy speaker'],
             'hindi': ['उपाध्यक्ष', 'माननीय उपाध्यक्ष']
         },
         'some_hon_members': {
@@ -526,12 +526,19 @@ class SpecialRoleDetector:
         if not isinstance(speaker_name, str) or not speaker_name:
             return False, None, "", ""
     
-        # Quick check for Hindi special roles - direct containment
         for role_type, role_refs in self.config.SPECIAL_ROLES.items():
+            # Check Hindi references - direct containment
             for ref in role_refs['hindi']:
                 if ref in speaker_name:
                     return True, role_type, self._get_standard_title(role_type, 'english'), self._get_standard_title(role_type, 'hindi')
-    
+            
+            # Check English references - direct containment
+            for ref in role_refs['english']:
+                norm_ref = ref.lower().strip()
+                norm_speaker_name = speaker_name.lower().strip()
+                if norm_ref in norm_speaker_name:
+                    return True, role_type, self._get_standard_title(role_type, 'english'), self._get_standard_title(role_type, 'hindi')
+        
         # Track the best match across all roles
         best_match = {
             'score': 0,
@@ -580,7 +587,7 @@ class SpecialRoleDetector:
                 'hindi': 'कुछ माननीय सदस्य'
             },
             'deputy_speaker': {
-                'english': 'DEPUTY SPEAKER',
+                'english': 'HON. DEPUTY SPEAKER',
                 'hindi': 'माननीय अध्यक्ष'
             },
             'chairperson': {
