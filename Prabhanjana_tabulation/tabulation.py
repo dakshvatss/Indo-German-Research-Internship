@@ -127,7 +127,7 @@ class ParliamentProcessor:
             # Check for Hindi/Devanagari letters (U+0900 to U+097F)
             elif '\u0900' <= char <= '\u097F':
                 letter_count += 1
-        return letter_count >= 3
+        return letter_count >= 6
 
     def validate_speaker(self, text: str) -> Optional[str]:
         """Validate text as a speaker."""
@@ -143,7 +143,7 @@ class ParliamentProcessor:
         # Clean the speaker part for validation
         cleaned_speaker = self.clean_speaker_text(speaker_part)
         
-        # Check if speaker has at least 4 letters
+        # Check if speaker has at least 6 letters
         if not self.has_sufficient_letters(cleaned_speaker):
             return None
         
