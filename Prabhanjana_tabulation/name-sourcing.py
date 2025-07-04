@@ -132,6 +132,10 @@ class NameNormalizer:
         if self._contains_phrase_with_accuracy(clean_name, "submissions by members", 0.85):
             # Return special marker for submissions by members
             return "SUBMISSIONS_BY_MEMBERS:" + clean_name, ""
+        if self._contains_phrase_with_accuracy(clean_name, "motion re", 0.9):
+            # Return special marker for submissions by members
+            return "SUBMISSIONS_BY_MEMBERS:" + clean_name, ""
+        
     
         # Check for brackets and handle special cases - find the LAST set of brackets
         bracket_matches = list(re.finditer(r'\([^)]+\)', clean_name))
@@ -148,9 +152,6 @@ class NameNormalizer:
         
             # Check if "minister of" appears before brackets with 85% accuracy
             if self._contains_phrase_with_accuracy(text_before_bracket, "minister of", 0.85):
-                # Return only the content within brackets as name, no constituency
-                return bracketed_content, ""
-            elif self._contains_phrase_with_accuracy(text_before_bracket, "motion re", 0.9):
                 # Return only the content within brackets as name, no constituency
                 return bracketed_content, ""
             else:
