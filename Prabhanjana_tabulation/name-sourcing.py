@@ -144,6 +144,7 @@ class NameNormalizer:
             bracket_match = bracket_matches[-1]
             text_before_bracket = clean_name[:bracket_match.start()].strip()
             bracketed_content = bracket_match.group(0)[1:-1].strip()  # Remove the brackets
+            text_after_bracket = clean_name[bracket_match.end():].strip() 
         
             # Check if "nominated" appears in brackets with 85% accuracy
             if self._contains_phrase_with_accuracy(bracketed_content, "nominated", 0.85):
@@ -157,7 +158,7 @@ class NameNormalizer:
             else:
                 # Store bracketed content as constituency and continue with normal processing
                 constituency = bracketed_content
-                clean_name = text_before_bracket
+                clean_name = (text_before_bracket + " " + text_after_bracket).strip()
     
         # Split into words and filter out titles
         words = clean_name.split()
