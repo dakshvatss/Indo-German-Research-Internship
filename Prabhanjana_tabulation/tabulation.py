@@ -118,16 +118,20 @@ class ParliamentProcessor:
         return any(self.is_speaker_formatted(word) for word in check_words)
     
     def has_sufficient_letters(self, text: str) -> bool:
-        """Check if text has at least 3 letters (English and Hindi)."""
-        letter_count = 0
+        """Check if text has sufficient letters (6 for English, 4 for Hindi)."""
+        english_count = 0
+        hindi_count = 0
+        
         for char in text:
             # Check for English letters
             if char.isalpha():
-                letter_count += 1
+                english_count += 1
             # Check for Hindi/Devanagari letters (U+0900 to U+097F)
             elif '\u0900' <= char <= '\u097F':
-                letter_count += 1
-        return letter_count >= 6
+                hindi_count += 1
+        
+        # Return True if either English has 6+ letters OR Hindi has 4+ letters
+        return english_count >= 6 or hindi_count >= 3
 
     def validate_speaker(self, text: str) -> Optional[str]:
         """Validate text as a speaker."""
