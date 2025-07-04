@@ -131,10 +131,10 @@ class NameNormalizer:
         # Check for "SUBMISSIONS BY MEMBERS" with 85% accuracy
         if self._contains_phrase_with_accuracy(clean_name, "submissions by members", 0.85):
             # Return special marker for submissions by members
-            return "SUBMISSIONS_BY_MEMBERS:" + clean_name, ""
+            return "STATEMENT:" + clean_name, ""
         if self._contains_phrase_with_accuracy(clean_name, "motion re", 0.9):
             # Return special marker for submissions by members
-            return "SUBMISSIONS_BY_MEMBERS:" + clean_name, ""
+            return "STATEMENT:" + clean_name, ""
         
     
         # Check for brackets and handle special cases - find the LAST set of brackets
@@ -1127,7 +1127,7 @@ class MPNameMatcher:
                         result_df.at[idx, 'hind name(pref 1)'] = "nan"
                         result_df.at[idx, 'eng name(pref 2)'] = re.sub(r'\s*\(.*?\)', '', nominated_name).strip() + ' (Nominated)'
                         result_df.at[idx, 'hind name(pref 2)'] = "nan"
-                    elif clean_name.startswith("SUBMISSIONS_BY_MEMBERS:"):
+                    elif clean_name.startswith("STATEMENT:"):
                         # For submissions by members, keep the original speaker name as is
                         result_df.at[idx, 'eng name(pref 1)'] = f"{speaker_name} (Statement)"
                         result_df.at[idx, 'hind name(pref 1)'] = "nan"
