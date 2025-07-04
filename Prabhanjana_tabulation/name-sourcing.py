@@ -522,13 +522,9 @@ class SpecialRoleDetector:
         """
         if not isinstance(speaker_name, str) or not speaker_name:
             return False, None, "", ""
-    
-        # Quick check for Hindi special roles - direct containment
-        for role_type, role_refs in self.config.SPECIAL_ROLES.items():
-            for ref in role_refs['hindi']:
-                if ref in speaker_name:
-                    return True, role_type, self._get_standard_title(role_type, 'english'), self._get_standard_title(role_type, 'hindi')
-    
+
+        norm_speaker = self.scorer.normalizer.normalize_name(speaker_name)
+        
         # Track the best match across all roles
         best_match = {
             'score': 0,
@@ -536,39 +532,59 @@ class SpecialRoleDetector:
             'english_title': '',
             'hindi_title': ''
         }
-    
-        # Check each special role
+
+        # Check each special role in a single loop
         for role_type, role_refs in self.config.SPECIAL_ROLES.items():
-            # Check English references
-            for ref in role_refs['english']:
-                eng_score, *_ = self.scorer.check_name_words_match(speaker_name, ref, is_hindi=False)
-                sim_score = self.scorer.calculate_string_similarity(speaker_name, ref, is_hindi=False)
-                combined_score = eng_score * self.config.WORD_MATCH_WEIGHT + sim_score * self.config.STRING_SIMILARITY_WEIGHT
-            
-                if combined_score > best_match['score']:
-                    best_match['score'] = combined_score
-                    best_match['role_type'] = role_type
-                    best_match['english_title'] = self._get_standard_title(role_type, 'english')
-                    best_match['hindi_title'] = self._get_standard_title(role_type, 'hindi')
-        
             # Check Hindi references
             for ref in role_refs['hindi']:
+                # Method 1: Direct containment and fuzzy matching with high threshold (0.95)
+                if ref in speaker_name:
+                    return True, role_type, self._get_standard_title(role_type, 'english'), self._get_standard_title(role_type, 'hindi')
+                
+                similarity = fuzz.partial_ratio(ref, speaker_name) / 100.0
+                if similarity >= 0.95:
+                    return True, role_type, self._get_standard_title(role_type, 'english'), self._get_standard_title(role_type, 'hindi')
+                
+                # Method 2: Combined scoring approach
                 hindi_score, *_ = self.scorer.check_name_words_match(speaker_name, ref, is_hindi=True)
                 sim_score = self.scorer.calculate_string_similarity(speaker_name, ref, is_hindi=True)
                 combined_score = hindi_score * self.config.WORD_MATCH_WEIGHT + sim_score * self.config.STRING_SIMILARITY_WEIGHT
-            
+                
                 if combined_score > best_match['score']:
                     best_match['score'] = combined_score
                     best_match['role_type'] = role_type
                     best_match['english_title'] = self._get_standard_title(role_type, 'english')
                     best_match['hindi_title'] = self._get_standard_title(role_type, 'hindi')
-    
+
+            # Check English references
+            for ref in role_refs['english']:
+                norm_ref = self.scorer.normalizer.normalize_name(ref)
+                
+                # Method 1: Direct containment and fuzzy matching with high threshold (0.95)
+                if norm_ref in norm_speaker:
+                    return True, role_type, self._get_standard_title(role_type, 'english'), self._get_standard_title(role_type, 'hindi')
+                
+                similarity = fuzz.partial_ratio(norm_ref, norm_speaker) / 100.0
+                if similarity >= 0.95:
+                    return True, role_type, self._get_standard_title(role_type, 'english'), self._get_standard_title(role_type, 'hindi')
+                
+                # Method 2: Combined scoring approach
+                eng_score, *_ = self.scorer.check_name_words_match(speaker_name, ref, is_hindi=False)
+                sim_score = self.scorer.calculate_string_similarity(speaker_name, ref, is_hindi=False)
+                combined_score = eng_score * self.config.WORD_MATCH_WEIGHT + sim_score * self.config.STRING_SIMILARITY_WEIGHT
+                
+                if combined_score > best_match['score']:
+                    best_match['score'] = combined_score
+                    best_match['role_type'] = role_type
+                    best_match['english_title'] = self._get_standard_title(role_type, 'english')
+                    best_match['hindi_title'] = self._get_standard_title(role_type, 'hindi')
+
         # Return the best match if it meets the threshold
         if best_match['score'] >= self.config.SPECIAL_ROLE_DETECTION_THRESHOLD:
             return True, best_match['role_type'], best_match['english_title'], best_match['hindi_title']
-    
+
         return False, None, "", ""
-    
+
     def _get_standard_title(self, role_type, language):
         """Get standardized title for a role type"""
         title_mapping = {
