@@ -123,10 +123,25 @@ class NameNormalizer:
             return "", ""
         clean_name = speaker_name.lower().strip()
         constituency = ""
-    
-        # For Hindi names, return the full name without any processing
-        if is_hindi:
-            return clean_name, ""
+        bracket_matches = list(re.finditer(r'\([^)]+\)', clean_name))
+        
+        if True:
+            if bracket_matches:
+                # Get the last (rightmost) bracket match
+                bracket_match = bracket_matches[-1]
+                text_before_bracket = clean_name[:bracket_match.start()].strip()
+                bracketed_content = bracket_match.group(0)[1:-1].strip()  # Remove the brackets
+                text_after_bracket = clean_name[bracket_match.end():].strip()
+                
+                # Check if "मंत्री" appears with exact word boundaries 
+                if "मंत्री" in text_before_bracket.split() or "मत्री" in text_before_bracket.split():
+                    # Return only the content within brackets as name, no constituency
+                    return bracketed_content, ""
+            
+            if is_hindi:
+                return clean_name, ""
+                
+            
     
         # Check for "SUBMISSIONS BY MEMBERS" with 85% accuracy
         if self._contains_phrase_with_accuracy(clean_name, "submissions by members", 0.85):
@@ -136,9 +151,6 @@ class NameNormalizer:
             # Return special marker for submissions by members
             return "STATEMENT:" + clean_name, ""
         
-    
-        # Check for brackets and handle special cases - find the LAST set of brackets
-        bracket_matches = list(re.finditer(r'\([^)]+\)', clean_name))
         if bracket_matches:
             # Get the last (rightmost) bracket match
             bracket_match = bracket_matches[-1]
@@ -372,7 +384,7 @@ class SimilarityScorer:
         return self._word_by_word_matching(norm_speaker, norm_mp, is_hindi)
     
     def _word_by_word_matching(self, norm_speaker, norm_mp, is_hindi):
-        """Enhanced word-by-word matching with FuzzyWuzzy for English"""
+        """Enhanced word-by-word matching with FuzzyWuzzy for English and exact word boost for Hindi"""
         if not norm_speaker or not norm_mp:
             return 0, []
         
@@ -381,6 +393,7 @@ class SimilarityScorer:
         
         matched_words = []
         word_scores = []
+        exact_word_matches = 0  # Track exact word matches for Hindi
         
         for mp_word in mp_words:
             best_match_score = 0
@@ -388,10 +401,11 @@ class SimilarityScorer:
             
             for speaker_word in speaker_words:
                 if is_hindi:
-                    # Keep existing Hindi logic
+                    # Check for exact word match first
                     if mp_word == speaker_word:
                         best_match_score = 1.0
                         best_match_word = mp_word
+                        exact_word_matches += 1
                         break
                     else:
                         consonant_sim = self.hindi_processor.calculate_consonant_similarity(mp_word, speaker_word)
@@ -426,9 +440,20 @@ class SimilarityScorer:
                 if mp_name_str.find(f"{matched_words[i]} {matched_words[i+1]}") >= 0:
                     match_score += self.config.SEQUENTIAL_MATCH_BONUS
             
+            # Add exact word match boost for Hindi names
+            if is_hindi and exact_word_matches > 0:
+                # Calculate exact word match ratio
+                exact_word_ratio = exact_word_matches / len(mp_words)
+                # Add boost based on exact word match ratio
+                exact_word_boost = exact_word_ratio * 0.35  # 35% boost for full exact match
+                match_score += exact_word_boost
+                
+                # Additional boost if all words are exact matches
+                if exact_word_matches == len(mp_words):
+                    match_score += 0.1  # Additional 10% boost for complete exact match
+            
             return min(match_score, 1.0), matched_words
         
-        return 0, []
     
     def calculate_string_similarity_with_constituency(self, speaker_str, mp_str, mp_constituency, is_hindi=False):
         """Enhanced similarity calculation with constituency consideration using FuzzyWuzzy"""
@@ -1200,7 +1225,7 @@ if __name__ == "__main__":
     # Default file paths and column indices
     mp_file_path = "16th_Lok_Sabha_Members.csv"
     rajya_sabha_file_path = "rajyasabha_ministers_16.csv"
-    speech_file_path = "lsd_16_04_2015-05-13.csv"
+    speech_file_path = "16-III-01.12.2014.csv"
     output_path = "matched_speeches.csv"
     
     # Default column indices (0-based)
