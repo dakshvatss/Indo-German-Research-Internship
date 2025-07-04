@@ -147,8 +147,10 @@ class NameNormalizer:
                 return "NOMINATED_MEMBER:" + text_before_bracket, ""
         
             # Check if "minister of" appears before brackets with 85% accuracy
-            target_phrase = "minister of"
-            if self._contains_phrase_with_accuracy(text_before_bracket, target_phrase, 0.85):
+            if self._contains_phrase_with_accuracy(text_before_bracket, "minister of", 0.85):
+                # Return only the content within brackets as name, no constituency
+                return bracketed_content, ""
+            elif self._contains_phrase_with_accuracy(text_before_bracket, "motion re", 0.9):
                 # Return only the content within brackets as name, no constituency
                 return bracketed_content, ""
             else:
