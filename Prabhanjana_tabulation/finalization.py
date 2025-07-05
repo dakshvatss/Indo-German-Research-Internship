@@ -380,10 +380,10 @@ def process_csv(input_file, members_file, output_file, rajya_sabha_file=None):
         
         # Logic Path 1: If a name occurs only once in pref 1, but pref 2 has a frequent speaker (>5 times)
         #NEEDS MORE TESTING
-        if (not is_null_or_empty(speaker_pref1) and not is_null_or_empty(speaker_pref2) and 
-            pref1_speakers_count[speaker_pref1] == 1 and speaker_pref2 in frequent_speakers):
-            selected_speaker = speaker_pref2
-            reason = f"Single occurrence in pref1, pref2 is frequent speaker ({speaker_pref2})"
+        # if (not is_null_or_empty(speaker_pref1) and not is_null_or_empty(speaker_pref2) and 
+        #     pref1_speakers_count[speaker_pref1] == 1 and speaker_pref2 in frequent_speakers):
+        #     selected_speaker = speaker_pref2
+        #     reason = f"Single occurrence in pref1, pref2 is frequent speaker ({speaker_pref2})"
         
         # Logic Path 2: If original speaker is in Hindi and pref 2 is a frequent speaker
         # elif row['is_hindi_speaker'] and not is_null_or_empty(speaker_pref2) and speaker_pref2 in frequent_speakers:
@@ -395,8 +395,8 @@ def process_csv(input_file, members_file, output_file, rajya_sabha_file=None):
         #         selected_speaker = speaker_pref1
         
         # Default to pref 1
-        else:
-            selected_speaker = speaker_pref1 if not is_null_or_empty(speaker_pref1) else speaker_pref2
+        # else: #(indent the following if testing path 1)
+        selected_speaker = speaker_pref1 if not is_null_or_empty(speaker_pref1) else speaker_pref2
         
         # If still no valid speaker, use whatever is available
         if is_null_or_empty(selected_speaker):
