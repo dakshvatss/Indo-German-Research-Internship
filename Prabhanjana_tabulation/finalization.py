@@ -254,6 +254,8 @@ def is_special_character(name):
         'माननीय अध्यक्ष': True,
         'DEPUTY SPEAKER': True,
         'माननीय उपाध्यक्ष': True,
+        'SOME HON. MEMBERS': True,
+        'कुछ माननीय सदस्य': True,
         'HON. CHAIRPERSON': True,
         'माननीय सभापति': True,
         'SECRETARY-GENERAL': True,
@@ -268,7 +270,7 @@ def is_special_character(name):
     
     return special_characters.get(name, False)
 
-def has_nominated_tag(name):
+def has_special_tag(name):
     """
     Check if the name contains '(Nominated)' tag
     
@@ -280,7 +282,7 @@ def has_nominated_tag(name):
     """
     if not isinstance(name, str):
         return False
-    return '(Nominated)' in name
+    return '(Nominated)' in name or '(Statement)' in name
 
 def process_csv(input_file, members_file, output_file, rajya_sabha_file=None):
     """
@@ -330,8 +332,11 @@ def process_csv(input_file, members_file, output_file, rajya_sabha_file=None):
     # Count frequency of speakers in both preference sets
     pref1_speakers_count = Counter(df['eng name(pref 1)'].fillna('Unknown'))
     
-    # Get the top 4 most occurring names in preference 1
-    top_speakers = [name for name, _ in pref1_speakers_count.most_common(4) if name != 'Unknown']
+    # Get names that appear more than 5 times in preference 1
+    frequent_speakers = {name for name, count in pref1_speakers_count.items() 
+                        if count > 5 and name != 'Unknown'}
+    
+    print(f"Found {len(frequent_speakers)} speakers with more than 5 occurrences: {frequent_speakers}")
     
     # Helper function to detect if text is Hindi
     def is_hindi(text):
@@ -373,20 +378,21 @@ def process_csv(input_file, members_file, output_file, rajya_sabha_file=None):
         selected_speaker = None
         reason = ""
         
-        # Logic Path 1: If a name occurs only once in pref 1, but pref 2 has one of the top 4 most frequent names
+        # Logic Path 1: If a name occurs only once in pref 1, but pref 2 has a frequent speaker (>5 times)
+        #NEEDS MORE TESTING
         if (not is_null_or_empty(speaker_pref1) and not is_null_or_empty(speaker_pref2) and 
-            pref1_speakers_count[speaker_pref1] == 1 and speaker_pref2 in top_speakers):
+            pref1_speakers_count[speaker_pref1] == 1 and speaker_pref2 in frequent_speakers):
             selected_speaker = speaker_pref2
-            reason = f"Single occurrence in pref1, pref2 is top speaker ({speaker_pref2})"
+            reason = f"Single occurrence in pref1, pref2 is frequent speaker ({speaker_pref2})"
         
-        # Logic Path 2: If original speaker is in Hindi and pref 2 is a prominent speaker
-        elif row['is_hindi_speaker'] and not is_null_or_empty(speaker_pref2) and speaker_pref2 in top_speakers:
-            eng_speaker_rows = df[~df['is_hindi_speaker']]
-            if speaker_pref2 in eng_speaker_rows['eng name(pref 2)'].values:
-                selected_speaker = speaker_pref2
-                reason = f"Hindi original speaker, pref2 is prominent ({speaker_pref2})"
-            else:
-                selected_speaker = speaker_pref1
+        # Logic Path 2: If original speaker is in Hindi and pref 2 is a frequent speaker
+        # elif row['is_hindi_speaker'] and not is_null_or_empty(speaker_pref2) and speaker_pref2 in frequent_speakers:
+        #     eng_speaker_rows = df[~df['is_hindi_speaker']]
+        #     if speaker_pref2 in eng_speaker_rows['eng name(pref 2)'].values:
+        #         selected_speaker = speaker_pref2
+        #         reason = f"Hindi original speaker, pref2 is frequent ({speaker_pref2})"
+        #     else:
+        #         selected_speaker = speaker_pref1
         
         # Default to pref 1
         else:
@@ -433,7 +439,7 @@ def process_csv(input_file, members_file, output_file, rajya_sabha_file=None):
             continue
         
         # Check if name contains (Nominated)
-        if has_nominated_tag(speaker_name):
+        if has_special_tag(speaker_name):
             output_data['party during election'].append('Invalid')
             output_data['party during speech'].append('Invalid')
             nominated_count += 1
@@ -491,6 +497,8 @@ def process_csv(input_file, members_file, output_file, rajya_sabha_file=None):
         "pref2_rows": pref2_used_rows,
         "pref2_reasons": pref2_reasons,
         "unique_speakers": len(set(output_df['eng name'].dropna())),
+        "frequent_speakers_count": len(frequent_speakers),
+        "frequent_speakers": frequent_speakers,
         "lok_sabha_matches": matches_found,
         "rajya_sabha_matches": rajya_sabha_matches,
         "special_characters": special_characters_count,
@@ -504,8 +512,8 @@ def main():
     """
     # File paths - update these as needed
     input_file = "matched_speeches.csv"          # Input CSV file with speeches
-    members_file = "17th_Lok_Sabha_Members.csv"  # CSV file with MP information
-    rajya_sabha_file = "rajyasabha_ministers_17.csv" 
+    members_file = "16th_Lok_Sabha_Members.csv"  # CSV file with MP information
+    rajya_sabha_file = "rajyasabha_ministers_16.csv" 
     output_file = "processed_speeches.csv"       # Output file
     
     try:
@@ -536,6 +544,8 @@ def main():
             print("\nNo rows used preference 2.")
         
         print(f"\nUnique speakers identified: {stats['unique_speakers']}")
+        print(f"Frequent speakers (>5 occurrences): {stats['frequent_speakers_count']}")
+        print(f"Frequent speakers: {', '.join(sorted(stats['frequent_speakers']))}")
         print(f"Lok Sabha members matched: {stats['lok_sabha_matches']}")
         print(f"Rajya Sabha members matched: {stats['rajya_sabha_matches']}")
         print(f"Special characters identified: {stats['special_characters']}")
