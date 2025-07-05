@@ -121,58 +121,40 @@ class NameNormalizer:
         """Extract the core name and constituency from speaker string"""
         if not isinstance(speaker_name, str):
             return "", ""
+        
         clean_name = speaker_name.lower().strip()
         constituency = ""
         bracket_matches = list(re.finditer(r'\([^)]+\)', clean_name))
         
-        if True:
-            if bracket_matches:
-                # Get the last (rightmost) bracket match
-                bracket_match = bracket_matches[-1]
-                text_before_bracket = clean_name[:bracket_match.start()].strip()
-                bracketed_content = bracket_match.group(0)[1:-1].strip()  # Remove the brackets
-                text_after_bracket = clean_name[bracket_match.end():].strip()
-                
-                # Check if "मंत्री" appears with exact word boundaries 
-                if "मंत्री" in text_before_bracket.split() or "मत्री" in text_before_bracket.split():
-                    # Return only the content within brackets as name, no constituency
-                    return bracketed_content, ""
-            
-            if is_hindi:
-                return clean_name, ""
-                
-            
-    
-        # Check for "SUBMISSIONS BY MEMBERS" with 85% accuracy
+        # Check for "SUBMISSIONS BY MEMBERS" or "motion re" with 85% accuracy
         if self._contains_phrase_with_accuracy(clean_name, "submissions by members", 0.85):
-            # Return special marker for submissions by members
             return "STATEMENT:" + clean_name, ""
         if self._contains_phrase_with_accuracy(clean_name, "motion re", 0.9):
-            # Return special marker for submissions by members
             return "STATEMENT:" + clean_name, ""
         
         if bracket_matches:
             # Get the last (rightmost) bracket match
             bracket_match = bracket_matches[-1]
             text_before_bracket = clean_name[:bracket_match.start()].strip()
-            bracketed_content = bracket_match.group(0)[1:-1].strip()  # Remove the brackets
-            text_after_bracket = clean_name[bracket_match.end():].strip() 
-        
-            # Check if "nominated" appears in brackets with 85% accuracy
+            bracketed_content = bracket_match.group(0)[1:-1].strip()  # Remove brackets
+            text_after_bracket = clean_name[bracket_match.end():].strip()
+            
+            # Check if "मंत्री" or "मत्री" appears before brackets
+            if "मंत्री" in text_before_bracket.split() or "मत्री" in text_before_bracket.split():
+                return bracketed_content, ""
+            
+            # Check if "nominated" appears in brackets
             if self._contains_phrase_with_accuracy(bracketed_content, "nominated", 0.85):
-                # Return special marker for nominated members
                 return "NOMINATED_MEMBER:" + text_before_bracket, ""
-        
-            # Check if "minister of" appears before brackets with 85% accuracy
+            
+            # Check if "minister of" appears before brackets
             if self._contains_phrase_with_accuracy(text_before_bracket, "minister of", 0.85):
-                # Return only the content within brackets as name, no constituency
                 return bracketed_content, ""
             else:
-                # Store bracketed content as constituency and continue with normal processing
                 constituency = bracketed_content
                 clean_name = (text_before_bracket + " " + text_after_bracket).strip()
-    
-        # Split into words and filter out titles
+        
+        # Remove honorifics
         words = clean_name.split()
         filtered_words = []
         for word in words:
@@ -180,9 +162,14 @@ class NameNormalizer:
             if (word_clean not in self.config.HINDI_TITLES and
                 word_clean.lower() not in self.config.ENGLISH_TITLES):
                 filtered_words.append(word_clean)
+        
         final_name = ' '.join(filtered_words).strip()
+        
+        # For Hindi names, ensure normalization and honorific removal
+        if is_hindi:
+            final_name, _ = self.normalize_hindi_name(final_name)
+        
         return final_name, constituency
-
 
     def _contains_phrase_with_accuracy(self, text, target_phrase, threshold):
         """Check if target phrase exists in text with given accuracy threshold using fuzzy matching"""
@@ -383,13 +370,21 @@ class SimilarityScorer:
         # Fallback to word-by-word matching for very low scores
         return self._word_by_word_matching(norm_speaker, norm_mp, is_hindi)
     
-    def _word_by_word_matching(self, norm_speaker, norm_mp, is_hindi):
+    def wordby_word_matching(self, norm_speaker, norm_mp, is_hindi):
         """Enhanced word-by-word matching with FuzzyWuzzy for English and exact word boost for Hindi"""
         if not norm_speaker or not norm_mp:
             return 0, []
         
+        # Remove honorifics for Hindi names
+        if is_hindi:
+            norm_speaker = ' '.join(word for word in norm_speaker.split() if word not in self.config.HINDI_TITLES)
+            norm_mp = ' '.join(word for word in norm_mp.split() if word not in self.config.HINDI_TITLES)
+        
         speaker_words = norm_speaker.split()
         mp_words = norm_mp.split()
+        
+        if not speaker_words or not mp_words:
+            return 0, []
         
         matched_words = []
         word_scores = []
@@ -440,13 +435,14 @@ class SimilarityScorer:
                 if mp_name_str.find(f"{matched_words[i]} {matched_words[i+1]}") >= 0:
                     match_score += self.config.SEQUENTIAL_MATCH_BONUS
             
-            # Add exact word match boost for Hindi names
+            # Add boost for Hindi names
             if is_hindi and exact_word_matches > 0:
                 # Calculate exact word match ratio
                 exact_word_ratio = exact_word_matches / len(mp_words)
                 # Add boost based on exact word match ratio
-                exact_word_boost = exact_word_ratio * 0.35  # 35% boost for full exact match
+                exact_word_boost = exact_word_ratio * 0.35  # 35% boost for full肴exact match
                 match_score += exact_word_boost
+                
                 
                 # Additional boost if all words are exact matches
                 if exact_word_matches == len(mp_words):
@@ -454,6 +450,7 @@ class SimilarityScorer:
             
             return min(match_score, 1.0), matched_words
         
+        return 0, []   
     
     def calculate_string_similarity_with_constituency(self, speaker_str, mp_str, mp_constituency, is_hindi=False):
         """Enhanced similarity calculation with constituency consideration using FuzzyWuzzy"""
@@ -1218,7 +1215,6 @@ class MPNameMatcher:
             traceback.print_exc()
             return False
 
-# Command line interface
 if __name__ == "__main__":
     print(f"Starting enhanced MP name matching process with dual data sources...")
     
