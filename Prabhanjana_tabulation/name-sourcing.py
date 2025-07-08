@@ -53,7 +53,7 @@ class Config:
             'hindi': ['माननीय अध्यक्ष', 'अध्यक्ष']
         },
         'deputy_speaker': {
-            'english': ['hon. deputy speaker'],
+            'english': ['hon. deputy speaker', 'deputy-speaker'],
             'hindi': ['उपाध्यक्ष', 'माननीय उपाध्यक्ष']
         },
         'some_hon_members': {
@@ -130,6 +130,8 @@ class NameNormalizer:
         if self._contains_phrase_with_accuracy(clean_name, "submissions by members", 0.85):
             return "STATEMENT:" + clean_name, ""
         if self._contains_phrase_with_accuracy(clean_name, "motion re", 0.9):
+            return "STATEMENT:" + clean_name, ""
+        if self._contains_phrase_with_accuracy(clean_name, "statement re", 0.95):
             return "STATEMENT:" + clean_name, ""
         
         if bracket_matches:
