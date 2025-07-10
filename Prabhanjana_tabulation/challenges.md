@@ -3,9 +3,9 @@
 ## Challenge 1: Hindi Character Misrecognition
 
 ```
-श्री संतोष कुमार WA,Santosh Kumar Kushwaha,संतोष कुमार कुशवाहा,Santosh Kumar Gangwar,संतोष कुमार गंगवार,
+श्री संतोष कुमार WA,Santosh Kumar Kushwaha,संतोष कुमार कुशवाहा
 
-श्री संतोष कुमार गंगवार,Santosh Kumar Gangwar,संतोष कुमार गंगवार,Santosh Kumar Kushwaha,संतोष कुमार कुशवाहा,
+श्री संतोष कुमार गंगवार,Santosh Kumar Gangwar,संतोष कुमार गंगवार
 ```
 
 
@@ -17,7 +17,7 @@ Hindi character misrecognition might lead to mischaracterization of names, espec
 ## Challenge 2: Tabulation Cross-Column Contamination
 
 ```
-Shri P.K. Biju, श्री रवनीत सिंह (लुधियाना)",Ravneet Singh Bittu,रवनीत सिंह बिट्टू,Rajveer Singh,राजवीर सिंह
+Shri P.K. Biju, श्री रवनीत सिंह (लुधियाना)",Ravneet Singh Bittu
 ```
 
 
