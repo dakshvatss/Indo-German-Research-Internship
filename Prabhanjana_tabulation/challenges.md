@@ -29,7 +29,7 @@ In some cases, the tabulation process incorrectly merges adjacent column entries
 ## Challenge 3: Multiple Names for the Same Individual
 
 ```
-**Afrin Ali** née **Aparupa Poddar**
+Afrin Ali née Aparupa Poddar
 ```
 
 
