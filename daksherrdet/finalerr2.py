@@ -222,8 +222,8 @@ class TextAnalyzer:
         self.custom_words = custom_words or set()
 
         # Thresholds for OCR errors - more permissive
-        self.english_threshold = 0.4
-        self.hindi_threshold = 0.5
+        self.english_threshold = 0.5
+        self.hindi_threshold = 0.6
 
         # Common prefixes/suffixes that might be incorrectly captured in OCR
         self.common_prefixes = {'hon', 'shri', 'smt', 'dr', 'mr', 'mrs', 'ms', 'श्री', 'श्रीमती'}
@@ -427,17 +427,119 @@ class TextAnalyzer:
                 return False, None, best_distance, corrections
             return True, best_correction, best_distance, corrections
 
+    def merge_separated_matras(self, text: str) -> str:
+        """Merge separated matras (vowel marks) with preceding consonants in Hindi text"""
+        # Define common matras that might be separated by OCR
+        matras = {
+            'ा', 'ि', 'ी', 'ु', 'ू', 'े', 'ै', 'ो', 'ौ', 'ं', 'ः', '्',
+            '\u093E', '\u093F', '\u0940', '\u0941', '\u0942', '\u0943', '\u0944',
+            '\u0945', '\u0946', '\u0947', '\u0948', '\u0949', '\u094A', '\u094B',
+            '\u094C', '\u094D', '\u0902', '\u0903'
+        }
+        
+        # Split text into words and process each
+        words = re.findall(r'\S+', text)
+        merged_words = []
+        
+        i = 0
+        while i < len(words):
+            current_word = words[i]
+            
+            # Check if next word is a standalone matra
+            if i + 1 < len(words):
+                next_word = words[i + 1]
+                # If next word is just a matra or starts with a matra
+                if (len(next_word) == 1 and next_word in matras) or \
+                   (len(next_word) > 0 and next_word[0] in matras):
+                    # Check if current word ends with a Hindi consonant
+                    if len(current_word) > 0 and self._is_hindi_consonant(current_word[-1]):
+                        # Merge the matra with current word
+                        current_word += next_word
+                        i += 1  # Skip the next word as it's been merged
+            
+            merged_words.append(current_word)
+            i += 1
+        
+        return ' '.join(merged_words)
+    
+    def _is_hindi_consonant(self, char: str) -> bool:
+        """Check if a character is a Hindi consonant"""
+        # Hindi consonants range (क to ह and additional consonants)
+        return ('\u0915' <= char <= '\u0939') or char in {
+            'क्ष', 'त्र', 'ज्ञ', 'श्र', '\u0958', '\u0959', '\u095A', '\u095B',
+            '\u095C', '\u095D', '\u095E', '\u095F'
+        }
+
+    def _merge_word_with_following_matras(self, word: str, context: str) -> str:
+        """Try to merge a Hindi word with following matras in the context"""
+        # Define matras that might be separated
+        matras = {
+            'ा', 'ि', 'ी', 'ु', 'ू', 'े', 'ै', 'ो', 'ौ', 'ं', 'ः', '्',
+            '\u093E', '\u093F', '\u0940', '\u0941', '\u0942', '\u0943', '\u0944',
+            '\u0945', '\u0946', '\u0947', '\u0948', '\u0949', '\u094A', '\u094B',
+            '\u094C', '\u094D', '\u0902', '\u0903'
+        }
+        
+        # Find the word in context
+        word_pattern = re.escape(word)
+        match = re.search(rf'\b{word_pattern}\b', context)
+        
+        if not match:
+            return word
+            
+        # Check if the word ends with a Hindi consonant
+        if len(word) == 0 or not self._is_hindi_consonant(word[-1]):
+            return word
+            
+        # Look for matras immediately following the word
+        end_pos = match.end()
+        merged_word = word
+        
+        # Check if there are matras following the word (with possible spaces)
+        remaining_text = context[end_pos:]
+        
+        # Skip whitespace and look for matras
+        i = 0
+        while i < len(remaining_text) and remaining_text[i].isspace():
+            i += 1
+            
+        # Collect matras that follow
+        while i < len(remaining_text) and remaining_text[i] in matras:
+            merged_word += remaining_text[i]
+            i += 1
+            # Skip any whitespace between matras
+            while i < len(remaining_text) and remaining_text[i].isspace():
+                i += 1
+                
+        return merged_word
+
     @lru_cache(maxsize=10000)
-    def check_hindi_word(self, word: str) -> Tuple[bool, Optional[str], float, List[Tuple[str, float]]]:
+    def check_hindi_word(self, word: str, context: str = "") -> Tuple[bool, Optional[str], float, List[Tuple[str, float]]]:
         """Check if a Hindi word is misspelled using dictionary lookup and edit distance"""
         # Skip very short words and non-Hindi characters
         word_analysis = self.analyze_word_language(word)
         if len(word) <= 2 or not word_analysis.is_hindi:
             return False, None, 0.0, []
 
-        # If the word is in dictionary, it's correct
+        # First check if the word is already correct in dictionary
         if word.lower() in self.hindi_dict:
             return False, None, 0.0, []
+
+        # If context is provided, try to merge matras from context
+        if context:
+            # Find the word in context and try to merge with following matras
+            merged_word = self._merge_word_with_following_matras(word, context)
+            if merged_word != word and merged_word.lower() in self.hindi_dict:
+                return False, None, 0.0, []
+            word = merged_word
+
+        # Also try standalone matra merging
+        merged_word = self.merge_separated_matras(word)
+        if merged_word != word:
+            # If word was modified by matra merging, check if it's now correct
+            if merged_word.lower() in self.hindi_dict:
+                return False, None, 0.0, []
+            word = merged_word
 
         # Find best corrections
         corrections = self.find_best_hindi_corrections(word)
@@ -482,6 +584,9 @@ class TextAnalyzer:
 
         text = str(text)  # Ensure text is a string
 
+        # Preprocess: merge separated matras in the entire text
+        text = self.merge_separated_matras(text)
+
         # Improved word extraction - handle punctuation and special characters better
         words = re.findall(r'\b[\w\u0900-\u097F\u1CD0-\u1CFF\uA8E0-\uA8FF]+\b', text)
 
@@ -514,19 +619,19 @@ class TextAnalyzer:
                     eng_errors += 1
                     if correction:
                         eng_corrections[word.lower()] = (correction, position)
-                    # Only include in error_details if distance is less than 0.168 for English
-                    if error_distance < 0.168:
+                    # Only include in error_details if distance is less than 0.167 for English
+                    if error_distance < 0.167:
                         error_details.append(self.create_error_detail(word, error_distance, all_corrections, position))
 
             elif word_analysis.primary_language == 'hindi':
                 hin_total += 1
-                is_error, correction, error_distance, all_corrections = self.check_hindi_word(word)
+                is_error, correction, error_distance, all_corrections = self.check_hindi_word(word, text)
                 if is_error and error_distance > 0.01:  # Filter out minor errors
                     hin_errors += 1
                     if correction:
                         hin_corrections[word] = (correction, position)
-                    # Only include in error_details if distance is less than 0.251 for Hindi
-                    if error_distance < 0.251:
+                    # Only include in error_details if distance is less than 0.35 for Hindi
+                    if error_distance < 0.35:
                         error_details.append(self.create_error_detail(word, error_distance, all_corrections, position))
 
             elif word_analysis.primary_language == 'mixed':
@@ -537,13 +642,13 @@ class TextAnalyzer:
 
                     if hindi_chars > english_chars:
                         hin_total += 1
-                        is_error, correction, error_distance, all_corrections = self.check_hindi_word(word)
+                        is_error, correction, error_distance, all_corrections = self.check_hindi_word(word, text)
                         if is_error and error_distance > 0.01:
                             hin_errors += 1
                             if correction:
                                 hin_corrections[word] = (correction, position)
-                            # Only include in error_details if distance is less than 0.251 for Hindi
-                            if error_distance < 0.251:
+                            # Only include in error_details if distance is less than 0.35 for Hindi
+                            if error_distance < 0.35:
                                 error_details.append(self.create_error_detail(word, error_distance, all_corrections, position))
                     else:
                         eng_total += 1
@@ -552,8 +657,8 @@ class TextAnalyzer:
                             eng_errors += 1
                             if correction:
                                 eng_corrections[word.lower()] = (correction, position)
-                            # Only include in error_details if distance is less than 0.168 for English
-                            if error_distance < 0.168:
+                            # Only include in error_details if distance is less than 0.167 for English
+                            if error_distance < 0.167:
                                 error_details.append(self.create_error_detail(word, error_distance, all_corrections, position))
 
         # Calculate error percentages
@@ -625,6 +730,65 @@ class CSVErrorDetector:
             return "Mixed"
         else:
             return "Unknown"
+
+    def process_csv(self, input_csv_path: str, output_csv_path: str, output_report_path: str = None) -> None:
+        """Process input CSV file and generate enhanced output with error analysis"""
+        try:
+            if not os.path.exists(input_csv_path):
+                raise FileNotFoundError(f"Input file not found: {input_csv_path}")
+
+            # Load CSV data
+            df = pd.read_csv(input_csv_path)
+
+            # Analyze CSV data
+            analysis_results = self._analyze_csv(df, verbose=True)
+
+            # Generate overall CSV statistics
+            csv_stats = self._calculate_csv_stats(analysis_results)
+
+            # Create enhanced DataFrame with additional columns
+            enhanced_df = self._create_enhanced_dataframe(df, analysis_results)
+
+            # Save enhanced CSV
+            enhanced_df.to_csv(output_csv_path, index=False, encoding='utf-8')
+
+            # Write analysis report if path is provided
+            if output_report_path:
+                self._write_results(output_report_path, df, analysis_results, csv_stats)
+
+            logger.info(f"Analysis completed successfully. Enhanced CSV: {output_csv_path}")
+
+        except Exception as e:
+            logger.error(f"Error processing CSV file: {str(e)}")
+            raise
+
+    def _create_enhanced_dataframe(self, df: pd.DataFrame, results: List[RowAnalysis]) -> pd.DataFrame:
+        """Create enhanced DataFrame with additional accuracy and error columns"""
+        # Start with original DataFrame
+        enhanced_df = df.copy()
+
+        # Add new columns specifically for speech column analysis
+        speech_accuracy_percentages = []
+        speech_primary_languages = []
+        speech_error_counts = []
+        speech_error_details_cols = []
+
+        for result in results:
+            speech_accuracy_percentages.append(round(result.accuracy_percentage, 2))
+            speech_primary_languages.append(result.primary_language)
+            speech_error_counts.append(result.total_errors)
+
+            # Format error details for CSV
+            error_details_str = self._format_error_details_for_csv(result.error_details)
+            speech_error_details_cols.append(error_details_str)
+
+        # Add the new columns to DataFrame with clear naming
+        enhanced_df['Speech_Accuracy_Percentage'] = speech_accuracy_percentages
+        enhanced_df['Speech_Primary_Language'] = speech_primary_languages
+        enhanced_df['Speech_Number_of_Errors'] = speech_error_counts
+        enhanced_df['Speech_Error_Details'] = speech_error_details_cols
+
+        return enhanced_df
 
     def _format_error_details_for_csv(self, error_details: List[ErrorDetail]) -> str:
         """Format error details as a string for CSV storage"""
@@ -793,9 +957,159 @@ class CSVErrorDetector:
             top_errors.append((word, correction, count))
 
         return top_errors
-    
-    def generate_corrected_csv(self, input_csv_path: str, corrected_csv_path: str) -> None:
-        """Generate a corrected CSV file by applying suggested corrections to detected errors."""
+
+    def _write_results(self, output_path: str, df: pd.DataFrame, results: List[RowAnalysis], csv_stats: Dict) -> None:
+        """Write detailed analysis results to output file"""
+        try:
+            with open(output_path, 'w', encoding='utf-8') as f:
+                # Write report header
+                f.write("# OCR Error Analysis Report\n\n")
+                f.write(f"Date: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+
+                # Write overall statistics
+                f.write("## Overall Statistics\n\n")
+                f.write(f"Total rows analyzed: {csv_stats['total_rows']}\n")
+                f.write(f"Total words: {csv_stats['total_words']}\n")
+                f.write(f"Total errors detected: {csv_stats['total_errors']}\n")
+                f.write(f"Overall accuracy: {csv_stats['overall_accuracy']:.2f}%\n\n")
+
+                # Language statistics
+                f.write("## Language Statistics\n\n")
+                f.write(f"English words: {csv_stats['total_english_words']} (Accuracy: {csv_stats['english_accuracy']:.2f}%)\n")
+                f.write(f"Hindi words: {csv_stats['total_hindi_words']} (Accuracy: {csv_stats['hindi_accuracy']:.2f}%)\n\n")
+
+                # Language distribution
+                f.write("## Row Language Distribution\n\n")
+                for lang, count in csv_stats['language_distribution'].items():
+                    f.write(f"{lang}: {count} rows ({count/csv_stats['total_rows']*100:.1f}%)\n")
+                f.write("\n")
+
+                # Column statistics 
+                f.write("## Column-wise Statistics\n\n")
+                for col_name, stats in csv_stats['column_stats'].items():
+                    f.write(f"### Column: {col_name}\n")
+                    f.write(f"Total words: {stats['total_words']}\n")
+                    f.write(f"English words: {stats['english_total']} (Errors: {stats['english_errors']}, Accuracy: {stats['english_accuracy']:.2f}%)\n")
+                    f.write(f"Hindi words: {stats['hindi_total']} (Errors: {stats['hindi_errors']}, Accuracy: {stats['hindi_accuracy']:.2f}%)\n")
+                    f.write(f"Overall accuracy: {stats['overall_accuracy']:.2f}%\n\n")
+
+                # Most frequent errors
+                f.write("## Most Frequent English Errors\n\n")
+                for word, correction, count in csv_stats['most_frequent_english_errors']:
+                    f.write(f"* '{word}' → '{correction}' (Found {count} times)\n")
+                f.write("\n")
+
+                f.write("## Most Frequent Hindi Errors\n\n")
+                for word, correction, count in csv_stats['most_frequent_hindi_errors']:
+                    f.write(f"* '{word}' → '{correction}' (Found {count} times)\n")
+                f.write("\n")
+
+                # Row-by-row analysis (limited to rows with errors)
+                f.write("## Detailed Row Analysis\n\n")
+                for result in sorted(results, key=lambda x: x.accuracy_percentage):
+                    # Only show rows with errors
+                    if result.total_errors > 0:
+                        f.write(f"### Row {result.row_number} (Accuracy: {result.accuracy_percentage:.2f}%, Language: {result.primary_language})\n\n")
+
+                        # List all errors in the row
+                        if result.error_details:
+                            f.write("Errors detected:\n\n")
+                            for error in result.error_details:
+                                best_suggestion = error.suggested_corrections[0][0] if error.suggested_corrections else "N/A"
+                                context = error.position.text
+                                if len(context) > 50:
+                                    context = f"{context[:25]}...{context[-25:]}"
+                                f.write(f"* '{error.original_word}' → '{best_suggestion}' (Column: {error.position.column}, Context: '{context}')\n")
+                            f.write("\n")
+
+                logger.info(f"Analysis report written to {output_path}")
+
+        except Exception as e:
+            logger.error(f"Error writing analysis report: {str(e)}")
+
+    def _calculate_csv_stats(self, results: List[RowAnalysis]) -> Dict:
+        """Calculate overall statistics for the CSV"""
+        # Initialize counters
+        total_english_words = 0
+        total_english_errors = 0
+        total_hindi_words = 0
+        total_hindi_errors = 0
+
+        # For column-wise statistics
+        column_stats = defaultdict(lambda: {
+            'english_total': 0,
+            'english_errors': 0,
+            'hindi_total': 0,
+            'hindi_errors': 0,
+            'total_words': 0,
+            'total_errors': 0
+        })
+
+        # Count words and errors for overall statistics
+        for result in results:
+            for col_name, stats in result.column_stats.items():
+                total_english_words += stats['english_total']
+                total_english_errors += stats['english_errors']
+                total_hindi_words += stats['hindi_total']
+                total_hindi_errors += stats['hindi_errors']
+
+                # Update column-wise statistics
+                column_stats[col_name]['english_total'] += stats['english_total']
+                column_stats[col_name]['english_errors'] += stats['english_errors']
+                column_stats[col_name]['hindi_total'] += stats['hindi_total']
+                column_stats[col_name]['hindi_errors'] += stats['hindi_errors']
+                column_stats[col_name]['total_words'] += stats['total_words']
+                column_stats[col_name]['total_errors'] += (stats['english_errors'] + stats['hindi_errors'])
+
+        # Calculate overall accuracy
+        english_accuracy = 100 - (total_english_errors / total_english_words * 100) if total_english_words > 0 else 100.0
+        hindi_accuracy = 100 - (total_hindi_errors / total_hindi_words * 100) if total_hindi_words > 0 else 100.0
+        total_words = total_english_words + total_hindi_words
+        total_errors = total_english_errors + total_hindi_errors
+        overall_accuracy = 100 - (total_errors / total_words * 100) if total_words > 0 else 100.0
+
+        # Calculate column-wise accuracy
+        for col_name in column_stats:
+            col = column_stats[col_name]
+            col['english_accuracy'] = 100 - (col['english_errors'] / col['english_total'] * 100) if col['english_total'] > 0 else 100.0
+            col['hindi_accuracy'] = 100 - (col['hindi_errors'] / col['hindi_total'] * 100) if col['hindi_total'] > 0 else 100.0
+            col['overall_accuracy'] = 100 - (col['total_errors'] / col['total_words'] * 100) if col['total_words'] > 0 else 100.0
+
+        # Count language distributions
+        language_counts = {
+            'English': sum(1 for r in results if r.primary_language == 'English'),
+            'Hindi': sum(1 for r in results if r.primary_language == 'Hindi'),
+            'Mixed': sum(1 for r in results if r.primary_language == 'Mixed'),
+            'Unknown': sum(1 for r in results if r.primary_language == 'Unknown')
+        }
+
+        # Return combined statistics
+        return {
+            'total_rows': len(results),
+            'total_english_words': total_english_words,
+            'total_english_errors': total_english_errors,
+            'english_accuracy': english_accuracy,
+            'total_hindi_words': total_hindi_words,
+            'total_hindi_errors': total_hindi_errors,
+            'hindi_accuracy': hindi_accuracy,
+            'total_words': total_words,
+            'total_errors': total_errors,
+            'overall_accuracy': overall_accuracy,
+            'column_stats': dict(column_stats),
+            'language_distribution': language_counts,
+            'most_frequent_english_errors': self._get_most_frequent_errors(self.all_english_errors, 20),
+            'most_frequent_hindi_errors': self._get_most_frequent_errors(self.all_hindi_errors, 20)
+        }
+
+    def generate_corrected_csv(self, input_csv_path: str, corrected_csv_path: str, confidence_threshold: float = 0.3) -> None:
+        """
+        Generate a corrected CSV file by applying suggested corrections to detected errors.
+
+        Args:
+            input_csv_path (str): Path to the input CSV file
+            corrected_csv_path (str): Path where the corrected CSV will be saved
+            confidence_threshold (float): Only apply corrections with normalized distance <= this threshold
+        """
         try:
             if not os.path.exists(input_csv_path):
                 raise FileNotFoundError(f"Input file not found: {input_csv_path}")
@@ -805,64 +1119,163 @@ class CSVErrorDetector:
 
             # Check if target column exists
             if self.target_column not in df.columns:
+                logger.warning(f"'{self.target_column}' column not found in CSV. Available columns: " + ", ".join(df.columns))
                 raise ValueError(f"'{self.target_column}' column not found in the CSV file")
 
             # Create a copy of the dataframe for corrections
             corrected_df = df.copy()
+
+            # Track correction statistics
+            total_corrections = 0
+            corrections_applied = {}
 
             # Process each row
             for row_idx, row in df.iterrows():
                 row_num = row_idx + 2  # Account for 1-based indexing and header row
                 cell_value = row[self.target_column]
 
-                if pd.isna(cell_value) or cell_value == "":
+                # Skip if cell is empty
+                if pd.isna(cell_value) or cell_value == '':
                     continue
 
+                # Get original text
                 original_text = str(cell_value)
                 corrected_text = original_text
 
-                # Get error details with language-specific threshold filtering
-                _, _, _, _, _, _, _, _, error_details = self.analyzer.calculate_cell_accuracy(
+                # Analyze the cell to get error details
+                _, _, _, eng_corrections, _, _, _, hin_corrections, error_details = self.analyzer.calculate_cell_accuracy(
                     original_text, row_num, self.target_column
                 )
 
-                # Sort error_details by word position to apply corrections in order
-                error_details.sort(key=lambda x: x.position.word)
+                # Apply corrections based on confidence threshold
+                words_corrected_in_row = []
 
-                # Apply corrections directly from error_details
-                for error in error_details:
-                    if error.suggested_corrections:
-                        correction = error.suggested_corrections[0][0]  # Best correction
-                        pattern = r"\b" + re.escape(error.original_word) + r"\b"
+                # Apply English corrections
+                for original_word, (correction, position) in eng_corrections.items():
+                    # Find the best correction from error details
+                    word_error_detail = None
+                    for error in error_details:
+                        if error.original_word.lower() == original_word.lower():
+                            word_error_detail = error
+                            break
+
+                    if word_error_detail and word_error_detail.error_distance <= confidence_threshold:
+                        # Use word boundaries to avoid partial matches
+                        pattern = r'\b' + re.escape(word_error_detail.original_word) + r'\b'
+                        if re.search(pattern, corrected_text, re.IGNORECASE):
+                            corrected_text = re.sub(pattern, correction, corrected_text, count=1, flags=re.IGNORECASE)
+                            words_corrected_in_row.append(f"{word_error_detail.original_word} → {correction}")
+                            total_corrections += 1
+
+                # Apply Hindi corrections
+                for original_word, (correction, position) in hin_corrections.items():
+                    # Find the best correction from error details
+                    word_error_detail = None
+                    for error in error_details:
+                        if error.original_word == original_word:
+                            word_error_detail = error
+                            break
+
+                    if word_error_detail and word_error_detail.error_distance <= confidence_threshold:
+                        # Use word boundaries for Hindi text too
+                        pattern = r'\b' + re.escape(word_error_detail.original_word) + r'\b'
                         if re.search(pattern, corrected_text):
                             corrected_text = re.sub(pattern, correction, corrected_text, count=1)
+                            words_corrected_in_row.append(f"{word_error_detail.original_word} → {correction}")
+                            total_corrections += 1
 
                 # Update the corrected dataframe
                 corrected_df.at[row_idx, self.target_column] = corrected_text
 
+                # Track corrections for this row
+                if words_corrected_in_row:
+                    corrections_applied[row_num] = words_corrected_in_row
+
+            # Add metadata columns to show what was corrected
+            correction_summary = []
+            for row_idx in range(len(df)):
+                row_num = row_idx + 2
+                if row_num in corrections_applied:
+                    correction_summary.append("; ".join(corrections_applied[row_num]))
+                else:
+                    correction_summary.append("")
+
+            corrected_df['Corrections_Applied'] = correction_summary
+
             # Save corrected CSV
-            corrected_df.to_csv(corrected_csv_path, index=False, encoding="utf-8")
+            corrected_df.to_csv(corrected_csv_path, index=False, encoding='utf-8')
+
             logger.info(f"Corrected CSV saved to: {corrected_csv_path}")
+            logger.info(f"Total corrections applied: {total_corrections}")
+            logger.info(f"Rows with corrections: {len(corrections_applied)}")
+
+            # Print summary of corrections
+            print(f"\n=== CORRECTION SUMMARY ===")
+            print(f"Total corrections applied: {total_corrections}")
+            print(f"Rows with corrections: {len(corrections_applied)}")
+            print(f"Confidence threshold used: {confidence_threshold}")
+
+            if corrections_applied:
+                print(f"\nFirst 10 rows with corrections:")
+                for i, (row_num, corrections) in enumerate(list(corrections_applied.items())[:10]):
+                    print(f"Row {row_num}: {'; '.join(corrections[:3])}{'...' if len(corrections) > 3 else ''}")
 
         except Exception as e:
             logger.error(f"Error generating corrected CSV: {str(e)}")
             raise
 
+    def process_csv_with_corrections(self, input_csv_path: str, output_csv_path: str, 
+                                    corrected_csv_path: str, output_report_path: str = None,
+                                    confidence_threshold: float = 0.3) -> None:
+        """
+        Enhanced process_csv method that also generates a corrected version
+
+        Args:
+            input_csv_path (str): Path to input CSV
+            output_csv_path (str): Path for enhanced CSV with analysis
+            corrected_csv_path (str): Path for corrected CSV with fixes applied
+            output_report_path (str, optional): Path for analysis report
+            confidence_threshold (float): Confidence threshold for applying corrections
+        """
+        try:
+            # First, run the original analysis
+            self.process_csv(input_csv_path, output_csv_path, output_report_path)
+
+            # Then generate the corrected version
+            self.generate_corrected_csv(input_csv_path, corrected_csv_path, confidence_threshold)
+
+            logger.info(f"Complete analysis finished:")
+            logger.info(f"- Enhanced CSV (with analysis): {output_csv_path}")
+            logger.info(f"- Corrected CSV (with fixes): {corrected_csv_path}")
+            if output_report_path:
+                logger.info(f"- Analysis report: {output_report_path}")
+
+        except Exception as e:
+            logger.error(f"Error in complete CSV processing: {str(e)}")
+            raise
+
 def main():
-    input_path = "processed_speeches.csv"
-    corrected_csv_path = "corrected_speeches.csv"  # Output path for corrected CSV
+    input_path = "lsd_16_04_2015-03-03.csv"
+    output_csv_path = "comparemy.csv"
+    corrected_csv_path = "comparemycorrectedcorrected.csv"
+    output_report_path = "comparemyreport.txt"
     hindi_dict_path = "hi_INsmall.dic"
     names_dict_path = "Names.txt"
     honorifics_dict_path = "honorifics.txt"
-    target_column = "speech"
+    target_column = "speech"  # Specify which column to analyze
+    confidence_threshold = 0.3  # Only apply corrections with confidence <= 0.3
 
-    print("🚀 Starting CSV Error Correction...")
+    print("🚀 Starting CSV Error Detection Analysis with Corrections...")
     print(f"📁 Input file: {input_path}")
     print(f"📊 Target column: {target_column}")
-    print(f"📝 Corrected CSV: {corrected_csv_path}")
+    print(f"📝 Enhanced CSV: {output_csv_path}")
+    print(f"🔧 Corrected CSV: {corrected_csv_path}")
+    print(f"📄 Analysis report: {output_report_path}")
+    print(f"🎯 Confidence threshold: {confidence_threshold}")
     print("-" * 60)
 
     try:
+        # Initialize detector with custom dictionaries and target column
         print("🔧 Initializing detector with dictionaries...")
         detector = CSVErrorDetector(
             hindi_dict_path=hindi_dict_path,
@@ -871,16 +1284,24 @@ def main():
             target_column=target_column
         )
 
-        # Generate corrected CSV with specified thresholds
-        print("📊 Generating corrected CSV...")
-        detector.generate_corrected_csv(input_path, corrected_csv_path)
+        # Process CSV file with corrections
+        print("📊 Processing CSV file with error detection and corrections...")
+        detector.process_csv_with_corrections(
+            input_path, 
+            output_csv_path, 
+            corrected_csv_path, 
+            output_report_path, 
+            confidence_threshold
+        )
 
-        print("\n✅ Correction completed successfully!")
-        print(f"✨ Corrected CSV saved to: {corrected_csv_path}")
+        print("\n✅ Analysis and corrections completed successfully!")
+        print(f"✨ Enhanced CSV (with analysis): {output_csv_path}")
+        print(f"🔧 Corrected CSV (with fixes applied): {corrected_csv_path}")
+        print(f"📋 Detailed report: {output_report_path}")
 
     except Exception as e:
-        print(f"\n❌ Error during correction: {str(e)}")
-        logger.error(f"Correction failed: {str(e)}")
+        print(f"\n❌ Error during analysis: {str(e)}")
+        logger.error(f"Analysis failed: {str(e)}")
         raise
 
 if __name__ == "__main__":
