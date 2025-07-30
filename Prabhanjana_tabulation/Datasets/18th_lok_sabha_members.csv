@@ -1,4 +1,4 @@
-﻿Sl. No.,Constituency,MP Name,MP Name (Hindi),Initial Party,Date,New Party,state
+Sl. No.,Constituency,MP Name,MP Name (Hindi),Initial Party,Date,New Party,state
 1,Andaman and Nicobar Islands,Bishnu Pada Ray,विष्णु पद रे,Bharatiya Janata Party,,,Andaman and Nicobar Islands
 2,Araku,Gumma Thanuja Rani,गुम्मा थानुजा रानी,YSR Congress Party,,,Andhra Pradesh
 3,Srikakulam,Kinjarapu Ram Mohan Naidu,किंजरापु राममोहन नायडू,Telugu Desam Party,,,Andhra Pradesh
@@ -194,25 +194,24 @@
 193,Kasaragod,Rajmohan Unnithan,राजमोहन उन्नीथन,Indian National Congress,,,Kerala
 194,Kannur,K. Sudhakaran,कुम्बाकुडी सुधाकरन,Indian National Congress,,,Kerala
 195,Vatakara,Shafi Parambil,शफी परम्बिल,Indian National Congress,,,Kerala
-196,Wayanad,Rahul Gandhi (Resigned on 17 June 2024),"राहुल गांधी 
-(17 जून 2024 को त्यागपत्र दिया)",Indian National Congress,,,Kerala
-197,Kozhikode,M. K. Raghavan,"प्रियंका गांधी
-(23 नवम्बर 2024 को चुनी गयीं)",Indian National Congress,,,Kerala
-198,Malappuram,E. T. Muhammed Basheer,एम॰के॰ राघवन,Indian Union Muslim League,,,Kerala
-199,Ponnani,M. P. Abdussamad Samadani,इ॰टी॰ मुहम्मद बशीर,Indian Union Muslim League,,,Kerala
-200,Palakkad,V. K. Sreekandan,एमपी अब्दुस्समद समदानी,Indian National Congress,,,Kerala
-201,Alathur,K. Radhakrishnan,वी॰के॰ श्रीकांदन,Communist Party of India (Marxist),,,Kerala
-202,Thrissur,Suresh Gopi,के॰ राधाकृष्णन,Bharatiya Janata Party,,,Kerala
-203,Chalakudy,Benny Behanan,सुरेश गोपी,Indian National Congress,,,Kerala
-204,Ernakulam,Hibi Eden,बेनी बेहनन,Indian National Congress,,,Kerala
-205,Idukki,Dean Kuriakose,हायबी ईडन,Indian National Congress,,,Kerala
-206,Kottayam,Francis George,डीन कुरियाकोस,Kerala Congress,,,Kerala
-207,Alappuzha,K. C. Venugopal,फ्रांसिस जॉर्ज,Indian National Congress,,,Kerala
-208,Mavelikara (SC),Kodikkunnil Suresh,के॰सी॰ वेणुगोपाल,Indian National Congress,,,Kerala
-209,Pathanamthitta,Anto Antony,कोडिकुन्नील सुरेश,Indian National Congress,,,Kerala
-210,Kollam,N. K. Premachandran,एंटो एंटनी,Revolutionary Socialist Party (India),,,Kerala
-211,Attingal,Adoor Prakash,एन॰के॰ प्रेमचन्द्रन,Indian National Congress,,,Kerala
-212,Thiruvananthapuram,Shashi Tharoor,अदूर प्रकाश,Indian National Congress,,,Kerala
+196.1,Wayanad,Rahul Gandhi,राहुल गांधी,Indian National Congress,,,Kerala
+196.2,Wayanad,Priyanka Gandhi,प्रियंका गांधी,Indian National Congress,,,
+197,Kozhikode,M. K. Raghavan,एम॰के॰ राघवन,Indian National Congress,,,Kerala
+198,Malappuram,E. T. Muhammed Basheer,इ॰टी॰ मुहम्मद बशीर,Indian Union Muslim League,,,Kerala
+199,Ponnani,M. P. Abdussamad Samadani,एमपी अब्दुस्समद समदानी,Indian Union Muslim League,,,Kerala
+200,Palakkad,V. K. Sreekandan,वी॰के॰ श्रीकांदन,Indian National Congress,,,Kerala
+201,Alathur,K. Radhakrishnan,के॰ राधाकृष्णन,Communist Party of India (Marxist),,,Kerala
+202,Thrissur,Suresh Gopi,सुरेश गोपी,Bharatiya Janata Party,,,Kerala
+203,Chalakudy,Benny Behanan,बेनी बेहनन,Indian National Congress,,,Kerala
+204,Ernakulam,Hibi Eden,हायबी ईडन,Indian National Congress,,,Kerala
+205,Idukki,Dean Kuriakose,डीन कुरियाकोस,Indian National Congress,,,Kerala
+206,Kottayam,Francis George,फ्रांसिस जॉर्ज,Kerala Congress,,,Kerala
+207,Alappuzha,K. C. Venugopal,के॰सी॰ वेणुगोपाल,Indian National Congress,,,Kerala
+208,Mavelikara (SC),Kodikkunnil Suresh,कोडिकुन्नील सुरेश,Indian National Congress,,,Kerala
+209,Pathanamthitta,Anto Antony,एंटो एंटनी,Indian National Congress,,,Kerala
+210,Kollam,N. K. Premachandran,एन॰के॰ प्रेमचन्द्रन,Revolutionary Socialist Party (India),,,Kerala
+211,Attingal,Adoor Prakash,अदूर प्रकाश,Indian National Congress,,,Kerala
+212,Thiruvananthapuram,Shashi Tharoor,शशि थरूर,Indian National Congress,,,Kerala
 213,Ladakh,Mohmad Haneefa,मोहम्मद हनीफा,Independent,,,Ladakh
 214,Lakshadweep,Muhammed Hamdulla Sayeed,मोहम्मद हमदुल्ला सईद,Indian National Congress,,,Lakshadweep
 215,Morena,Shivmangal Singh Tomar,शिवमंगल सिंह तोमर,Bharatiya Janata Party,,,Madhya Pradesh
@@ -259,39 +258,40 @@
 256,Chandrapur,Pratibha Dhanorkar,प्रतिभा सुरेश धानोरकर,Indian National Congress,,,Maharashtra
 257,Yavatmal–Washim,Sanjay Deshmukh,संजय उत्तमराव देशमुख,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
 258,Hingoli,Nagesh Aashtikar Patil,नागेश आष्टिकर पाटिल,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
-259,Nanded,Vasantrao Balwantrao Chavan ,वसंतराव बलवंतराव चव्हाण ,Indian National Congress,,,Maharashtra
-260,Parbhani,Sanjay Jadhav,रविंद्र वसंतराव चव्हाण ,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
-261,Jalna,Kalyan Kale,संजय हरिभाऊ जाधव,Indian National Congress,,,Maharashtra
-262,Aurangabad,Sandipanrao Bhumre,कल्याण काले,Shiv Sena,,,Maharashtra
-263,Dindori,Bhaskar Bhagare,संदीपनराव भुमरे,Nationalist Congress Party (Sharadchandra Pawar),,,Maharashtra
-264,Nashik,Rajabhau Waje,भास्कर भागारे,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
-265,Palghar,Hemant Savara,राजाभाऊ वाजे,Bharatiya Janata Party,,,Maharashtra
-266,Bhiwandi,Suresh Mhatre,हेमन्त विष्णु सवारा,Nationalist Congress Party (Sharadchandra Pawar),,,Maharashtra
-267,Kalyan,Shrikant Shinde,सुरेश गोपीनाथ म्हात्रे,Shiv Sena,,,Maharashtra
-268,Thane,Naresh Mhaske,श्रीकांत एकनाथ शिंदे,Shiv Sena,,,Maharashtra
-269,Mumbai North,Piyush Goyal,नरेश गणपत म्हस्के,Bharatiya Janata Party,,,Maharashtra
-270,Mumbai North West,Ravindra Waikar,पीयूष गोयल,Shiv Sena,,,Maharashtra
-271,Mumbai North East,Sanjay Dina Patil,रवींद्र वाईकर,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
-272,Mumbai North Central,Varsha Gaikwad,संजय दिना पाटील,Indian National Congress,,,Maharashtra
-273,Mumbai South Central,Anil Desai,वर्षा गायकवाड़,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
-274,Mumbai South,Arvind Sawant,अनिल देसाई,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
-275,Raigad,Sunil Tatkare,अरविंद सावंत,Nationalist Congress Party,,,Maharashtra
-276,Maval,Shrirang Barne,तटकरे सुनील दत्तात्रेय,Shiv Sena,,,Maharashtra
-277,Pune,Murlidhar Mohol,श्रीरंग बरने,Bharatiya Janata Party,,,Maharashtra
-278,Baramati,Supriya Sule,मुरलीधर मोहोल,Nationalist Congress Party (Sharadchandra Pawar),,,Maharashtra
-279,Shirur,Amol Kolhe,सुप्रिया सुले,Nationalist Congress Party (Sharadchandra Pawar),,,Maharashtra
-280,Ahmednagar,Nilesh Lanke,अमोल रामसिंह कोल्हे,Nationalist Congress Party (Sharadchandra Pawar),,,Maharashtra
-281,Shirdi,Bhausaheb Wakchaure,निलेश ज्ञानदेव लंके,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
-282,Beed,Bajrang Sonwane,भाऊसाहेब राजाराम वाकचौरे,Nationalist Congress Party (Sharadchandra Pawar),,,Maharashtra
-283,Osmanabad,Omprakash Rajenimbalkar,बजरंग मनोहर सोनवाणे,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
-284,Latur,Shivaji Kalge,ओमप्रकाश राजेनिम्बलकर,Indian National Congress,,,Maharashtra
-285,Solapur (SC),Praniti Shinde,कल्गे शिवाजी बंडप्पा,Indian National Congress,,,Maharashtra
-286,Madha,Dhairyasheel Mohite Patil,प्रणीति सुशीलकुमार शिंदे,Nationalist Congress Party (Sharadchandra Pawar),,,Maharashtra
-287,Sangli,Vishal Patil,मोहिते पाटिल धैर्यशील राजसिंह,Independent,,,Maharashtra
-288,Satara,Udayanraje Bhosale,विशाल प्रकाशबापु पाटील,Bharatiya Janata Party,,,Maharashtra
-289,Ratnagiri–Sindhudurg,Narayan Rane,उदयनराजे भोसले,Bharatiya Janata Party,,,Maharashtra
-290,Kolhapur,Shahu Chhatrapati Maharaj,नारायण राणे,Indian National Congress,,,Maharashtra
-291,Hatkanangle,Dhairyasheel Mane,शाहू छत्रपति महाराज,Shiv Sena,,,Maharashtra
+259.1,Nanded,Vasantrao Balwantrao Chavan ,वसंतराव बलवंतराव चव्हाण ,Indian National Congress,,,Maharashtra
+259.2,Nanded,Ravindra Vasantrao Chavan,रविंद्र वसंतराव चव्हाण ,Indian National Congress,,,
+260,Parbhani,Sanjay Jadhav,संजय हरिभाऊ जाधव,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
+261,Jalna,Kalyan Kale,कल्याण काले,Indian National Congress,,,Maharashtra
+262,Aurangabad,Sandipanrao Bhumre,संदीपनराव भुमरे,Shiv Sena,,,Maharashtra
+263,Dindori,Bhaskar Bhagare,भास्कर भागारे,Nationalist Congress Party (Sharadchandra Pawar),,,Maharashtra
+264,Nashik,Rajabhau Waje,राजाभाऊ वाजे,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
+265,Palghar,Hemant Savara,हेमन्त विष्णु सवारा,Bharatiya Janata Party,,,Maharashtra
+266,Bhiwandi,Suresh Mhatre,सुरेश गोपीनाथ म्हात्रे,Nationalist Congress Party (Sharadchandra Pawar),,,Maharashtra
+267,Kalyan,Shrikant Shinde,श्रीकांत एकनाथ शिंदे,Shiv Sena,,,Maharashtra
+268,Thane,Naresh Mhaske,नरेश गणपत म्हस्के,Shiv Sena,,,Maharashtra
+269,Mumbai North,Piyush Goyal,पीयूष गोयल,Bharatiya Janata Party,,,Maharashtra
+270,Mumbai North West,Ravindra Waikar,रवींद्र वाईकर,Shiv Sena,,,Maharashtra
+271,Mumbai North East,Sanjay Dina Patil,संजय दिना पाटील,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
+272,Mumbai North Central,Varsha Gaikwad,वर्षा गायकवाड़,Indian National Congress,,,Maharashtra
+273,Mumbai South Central,Anil Desai,अनिल देसाई,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
+274,Mumbai South,Arvind Sawant,अरविंद सावंत,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
+275,Raigad,Sunil Tatkare,तटकरे सुनील दत्तात्रेय,Nationalist Congress Party,,,Maharashtra
+276,Maval,Shrirang Barne,श्रीरंग बरने,Shiv Sena,,,Maharashtra
+277,Pune,Murlidhar Mohol,मुरलीधर मोहोल,Bharatiya Janata Party,,,Maharashtra
+278,Baramati,Supriya Sule,सुप्रिया सुले,Nationalist Congress Party (Sharadchandra Pawar),,,Maharashtra
+279,Shirur,Amol Kolhe,अमोल रामसिंह कोल्हे,Nationalist Congress Party (Sharadchandra Pawar),,,Maharashtra
+280,Ahmednagar,Nilesh Lanke,निलेश ज्ञानदेव लंके,Nationalist Congress Party (Sharadchandra Pawar),,,Maharashtra
+281,Shirdi,Bhausaheb Wakchaure,भाऊसाहेब राजाराम वाकचौरे,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
+282,Beed,Bajrang Sonwane,बजरंग मनोहर सोनवाणे,Nationalist Congress Party (Sharadchandra Pawar),,,Maharashtra
+283,Osmanabad,Omprakash Rajenimbalkar,ओमप्रकाश राजेनिम्बलकर,Shiv Sena (Uddhav Balasaheb Thackeray),,,Maharashtra
+284,Latur,Shivaji Kalge,कल्गे शिवाजी बंडप्पा,Indian National Congress,,,Maharashtra
+285,Solapur (SC),Praniti Shinde,प्रणीति सुशीलकुमार शिंदे,Indian National Congress,,,Maharashtra
+286,Madha,Dhairyasheel Mohite Patil,मोहिते पाटिल धैर्यशील राजसिंह,Nationalist Congress Party (Sharadchandra Pawar),,,Maharashtra
+287,Sangli,Vishal Patil,विशाल प्रकाशबापु पाटील,Independent,,,Maharashtra
+288,Satara,Udayanraje Bhosale,उदयनराजे भोसले,Bharatiya Janata Party,,,Maharashtra
+289,Ratnagiri–Sindhudurg,Narayan Rane,नारायण राणे,Bharatiya Janata Party,,,Maharashtra
+290,Kolhapur,Shahu Chhatrapati Maharaj,शाहू छत्रपति महाराज,Indian National Congress,,,Maharashtra
+291,Hatkanangle,Dhairyasheel Mane,धैर्यशील माने,Shiv Sena,,,Maharashtra
 292,Inner Manipur,Angomcha Bimol Akoijam,अंगोमचा बिमोल अकोइजम,Indian National Congress,,,Manipur
 293,Outer Manipur (ST),Alfred Kan-Ngam Arthur,अल्फ्रेड कान-नगम आर्थर ,Indian National Congress,,,Manipur
 294,Shillong,Ricky AJ Syngkon,रिकी एंड्रयू सिंग्कोन,Voice of the People Party,,,Meghalaya
@@ -520,7 +520,7 @@
 516,Barrackpore,Partha Bhowmick,पार्थ भौमिक,Trinamool Congress,,,West Bengal
 517,Dum Dum,Saugata Roy,सौगत रॉय,Trinamool Congress,,,West Bengal
 518,Barasat,Kakoli Ghosh Dastidar,कल्कली घोष दस्तिदार,Trinamool Congress,,,West Bengal
-519,Basirhat,Haji Nurul Islam (Died on 25 September 2024),शेख नुरुल इस्लाम,Trinamool Congress,,,West Bengal
+519,Basirhat,Haji Nurul Islam,शेख नुरुल इस्लाम,Trinamool Congress,,,West Bengal
 520,Jaynagar,Pratima Mondal,प्रतिमा मंडल,Trinamool Congress,,,West Bengal
 521,Mathurapur (SC),Bapi Halder,बापी हालदर,Trinamool Congress,,,West Bengal
 522,Diamond Harbour,Abhishek Banerjee,अभिषेक बनर्जी,Trinamool Congress,,,West Bengal
