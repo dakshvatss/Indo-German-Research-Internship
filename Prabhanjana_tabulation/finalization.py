@@ -43,6 +43,71 @@ def is_null_or_empty(value):
     """
     return pd.isna(value) or value == '' or str(value).lower() == 'nan'
 
+def classify_language(text, minority_threshold=0.20):
+    """
+    Classify text as Hindi, English, or Mixed based on character analysis
+    
+    Args:
+        text (str): Text to classify
+        minority_threshold (float): Minimum percentage for minority language to be considered "Mixed"
+    
+    Returns:
+        str: 'Hindi', 'English', 'Mixed', or 'Unknown'
+    """
+    if not isinstance(text, str) or text.strip() == '':
+        return 'Unknown'
+    
+    # Extract words using regex that captures both English and Hindi characters
+    words = re.findall(r'\b[\w\u0900-\u097F\u1CD0-\u1CFF\uA8E0-\uA8FF]+\b', text)
+    
+    # Filter out very short words (likely noise)
+    meaningful_words = [w for w in words if len(w) > 2]
+    
+    if len(meaningful_words) < 3:
+        return 'Unknown'
+    
+    english_count = 0
+    hindi_count = 0
+    
+    for word in meaningful_words:
+        # Check for English characters (ASCII letters)
+        has_english = bool(re.search(r'[a-zA-Z]', word))
+        # Check for Hindi characters (Devanagari script)
+        has_hindi = bool(re.search(r'[\u0900-\u097F\u1CD0-\u1CFF\uA8E0-\uA8FF]', word))
+        
+        if has_english and not has_hindi:
+            english_count += 1
+        elif has_hindi and not has_english:
+            hindi_count += 1
+        elif has_english and has_hindi:
+            # For mixed-script words, count characters to determine dominance
+            english_chars = len(re.findall(r'[a-zA-Z]', word))
+            hindi_chars = len(re.findall(r'[\u0900-\u097F\u1CD0-\u1CFF\uA8E0-\uA8FF]', word))
+            
+            if hindi_chars > english_chars:
+                hindi_count += 1
+            else:
+                english_count += 1
+    
+    total_classified = english_count + hindi_count
+    
+    if total_classified == 0:
+        return 'Unknown'
+    
+    english_ratio = english_count / total_classified
+    hindi_ratio = hindi_count / total_classified
+    
+    # Apply threshold logic
+    if english_ratio >= (1 - minority_threshold) and hindi_ratio < minority_threshold:
+        return 'English'
+    elif hindi_ratio >= (1 - minority_threshold) and english_ratio < minority_threshold:
+        return 'Hindi'
+    elif english_ratio >= minority_threshold and hindi_ratio >= minority_threshold:
+        return 'Mixed'
+    else:
+        # Edge case handling
+        return 'English' if english_count > hindi_count else 'Hindi'
+
 def find_member_in_lookup(name, lookup_dict):
     """
     Find member in lookup dictionary with fallback to cleaned name
@@ -284,7 +349,7 @@ def has_special_tag(name):
         return False
     return '(Nominated)' in name or '(Statement)' in name
 
-def process_csv(input_file, members_file, output_file, rajya_sabha_file=None):
+def process_csv(input_file, members_file, output_file, rajya_sabha_file=None, language_threshold=0.20):
     """
     Process the CSV file with member information and enhanced logic
     
@@ -293,8 +358,10 @@ def process_csv(input_file, members_file, output_file, rajya_sabha_file=None):
         members_file (str): Path to the members CSV file
         output_file (str): Path to save the processed CSV file
         rajya_sabha_file (str): Path to the Rajya Sabha CSV file (optional)
+        language_threshold (float): Threshold for language classification (default 0.20)
     """
     print(f"Reading data from {input_file}...")
+    print(f"Using language classification threshold: {language_threshold}")
     
     # Load members list
     members_lookup = load_members_list(members_file)
@@ -362,7 +429,8 @@ def process_csv(input_file, members_file, output_file, rajya_sabha_file=None):
         'hindi name': [],
         'party during election': [],
         'party during speech': [],
-        'speech': df['speech'].astype(str).str.replace('*', '', regex=False).tolist()
+        'speech': df['speech'].astype(str).str.replace('*', '', regex=False).tolist(),
+        'speech_language': []  # New column for language classification
     }
     
     # Track which rows used preference 2
@@ -380,10 +448,10 @@ def process_csv(input_file, members_file, output_file, rajya_sabha_file=None):
         
         # Logic Path 1: If a name occurs only once in pref 1, but pref 2 has a frequent speaker (>5 times)
         #NEEDS MORE TESTING
-        # if (not is_null_or_empty(speaker_pref1) and not is_null_or_empty(speaker_pref2) and 
-        #     pref1_speakers_count[speaker_pref1] == 1 and speaker_pref2 in frequent_speakers):
-        #     selected_speaker = speaker_pref2
-        #     reason = f"Single occurrence in pref1, pref2 is frequent speaker ({speaker_pref2})"
+        if (not is_null_or_empty(speaker_pref1) and not is_null_or_empty(speaker_pref2) and 
+            pref1_speakers_count[speaker_pref1] == 1 and speaker_pref2 in frequent_speakers):
+            selected_speaker = speaker_pref2
+            reason = f"Single occurrence in pref1, pref2 is frequent speaker ({speaker_pref2})"
         
         # Logic Path 2: If original speaker is in Hindi and pref 2 is a frequent speaker
         # elif row['is_hindi_speaker'] and not is_null_or_empty(speaker_pref2) and speaker_pref2 in frequent_speakers:
@@ -395,8 +463,8 @@ def process_csv(input_file, members_file, output_file, rajya_sabha_file=None):
         #         selected_speaker = speaker_pref1
         
         # Default to pref 1
-        # else: #(indent the following if testing path 1)
-        selected_speaker = speaker_pref1 if not is_null_or_empty(speaker_pref1) else speaker_pref2
+        else: #(indent the following if testing path 1)
+            selected_speaker = speaker_pref1 if not is_null_or_empty(speaker_pref1) else speaker_pref2
         
         # If still no valid speaker, use whatever is available
         if is_null_or_empty(selected_speaker):
@@ -423,6 +491,11 @@ def process_csv(input_file, members_file, output_file, rajya_sabha_file=None):
         else:
             hindi_name = row['hind name(pref 1)'] if not is_null_or_empty(row['hind name(pref 1)']) else row['hind name(pref 2)']
             output_data['hindi name'].append(hindi_name)
+        
+        # Classify speech language using the specified threshold
+        speech_text = str(row['speech']) if not is_null_or_empty(row['speech']) else ""
+        language_classification = classify_language(speech_text, language_threshold)
+        output_data['speech_language'].append(language_classification)
     
     # Initialize party columns
     matches_found = 0
@@ -484,6 +557,13 @@ def process_csv(input_file, members_file, output_file, rajya_sabha_file=None):
     # Create output DataFrame from the data
     output_df = pd.DataFrame(output_data)
     
+    # Generate language classification statistics
+    language_stats = output_df['speech_language'].value_counts()
+    print(f"\nLanguage Classification Statistics:")
+    for lang, count in language_stats.items():
+        percentage = (count / len(output_df)) * 100
+        print(f"  {lang}: {count} ({percentage:.1f}%)")
+    
     # Save the processed data
     print(f"Saving processed data to {output_file}...")
     output_df.to_csv(output_file, index=False)
@@ -503,7 +583,9 @@ def process_csv(input_file, members_file, output_file, rajya_sabha_file=None):
         "rajya_sabha_matches": rajya_sabha_matches,
         "special_characters": special_characters_count,
         "nominated_members": nominated_count,
-        "common_date": common_date
+        "common_date": common_date,
+        "language_stats": dict(language_stats),
+        "language_threshold_used": language_threshold
     }
 
 def main():
@@ -511,14 +593,17 @@ def main():
     Main function with file paths
     """
     # File paths - update these as needed
-    input_file = "matched_speeches.csv"          # Input CSV file with speeches
-    members_file = "16th_Lok_Sabha_Members.csv"  # CSV file with MP information
-    rajya_sabha_file = "rajyasabha_ministers_16.csv" 
+    input_file = r"test\matched_speeches.csv"          # Input CSV file with speeches
+    members_file = r"test\16th_Lok_Sabha_Members.csv"  # CSV file with MP information
+    rajya_sabha_file = r"test\rajyasabha_ministers_16.csv" 
     output_file = "processed_speeches.csv"       # Output file
+    
+    # Language classification threshold - EDITABLE PARAMETER
+    language_threshold = 0.20  # 20% threshold for minority language to be considered "Mixed"
     
     try:
         # Run the processing
-        stats = process_csv(input_file, members_file, output_file, rajya_sabha_file)
+        stats = process_csv(input_file, members_file, output_file, rajya_sabha_file, language_threshold)
         
         # Display statistics
         print("\nProcessing Statistics:")
@@ -551,6 +636,7 @@ def main():
         print(f"Special characters identified: {stats['special_characters']}")
         print(f"Nominated members identified: {stats['nominated_members']}")
         print(f"Common date extracted: {stats['common_date']}")
+        print(f"Language threshold used: {stats['language_threshold_used']}")
         
     except Exception as e:
         print(f"Error: {e}")
