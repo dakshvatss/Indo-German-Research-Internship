@@ -317,7 +317,7 @@ def is_special_character(name):
     special_characters = {
         'HON. SPEAKER': True,
         'माननीय अध्यक्ष': True,
-        'DEPUTY SPEAKER': True,
+        'HON. DEPUTY SPEAKER': True,
         'माननीय उपाध्यक्ष': True,
         'SOME HON. MEMBERS': True,
         'कुछ माननीय सदस्य': True,
@@ -645,3 +645,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
